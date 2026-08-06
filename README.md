@@ -268,8 +268,6 @@ Follow this sequence for a hiring-manager or reviewer demo. Full checklist: [`do
 ### Export DOCX
 ![Export](docs/screenshots/05-export.png)
 
-> Production screenshots will be added after capture. The README is already configured to render them automatically once committed.
-
 ---
 
 ## Documentation index
