@@ -32,16 +32,28 @@ const sampleRequest: AIRequest = {
     currentReasoning:
       "The learning behavior described suggests a machine learning algorithm, though technical implementation details are not disclosed. May need stronger technical evidence.",
     currentEvidenceSource: "Product_Brochure.pdf — Auto-Schedule marketing claim",
+    claimStatus: "needs_review",
+    uploadedDocumentNames: [
+      "Engineering_Manual.pdf",
+      "Product_Brochure.pdf",
+    ],
     supportingDocuments: [
       {
         documentName: "Engineering_Manual.pdf",
         sourceType: "Technical Manual",
+        citation:
+          "Engineering_Manual.pdf — Auto-Schedule preference learning from setpoints",
+        source: "Engineering manual — Auto-Schedule",
+        confidence: 0.92,
         excerpt:
           "Auto-Schedule records historical setpoint adjustments and updates recommended schedules based on observed preference patterns.",
       },
       {
         documentName: "Product_Brochure.pdf",
         sourceType: "Marketing",
+        citation: "Product_Brochure.pdf — Auto-Schedule marketing claim",
+        source: "Marketing materials — Auto-Schedule",
+        confidence: 0.7,
         excerpt:
           "Auto-Schedule learns your preferred temperatures over time.",
       },

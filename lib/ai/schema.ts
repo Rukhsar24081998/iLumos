@@ -41,7 +41,8 @@ export const AI_SUGGESTION_SCHEMA = {
       type: "number",
       minimum: 0,
       maximum: 1,
-      description: "Model confidence between 0 and 1.",
+      description:
+        "Realistic confidence 0–1 from evidence quality, quantity, relevance, and reasoning certainty. Never default to 0.",
     },
     proposedUpdates: {
       type: "object",

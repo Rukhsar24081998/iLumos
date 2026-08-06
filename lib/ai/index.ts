@@ -31,6 +31,11 @@ export type {
   PromptContext,
   SupportingDocumentContext,
 } from "@/lib/ai/types";
+export {
+  clampConfidence,
+  normalizeConfidenceForDisplay,
+  sanitizeDisplayText,
+} from "@/lib/ai/displayText";
 export { EXAMPLE_AI_RESPONSE } from "@/lib/ai/exampleResponse";
 export {
   mapAIResponseToAssistantMessage,

@@ -46,7 +46,20 @@ function toSupportingDocuments(
     documentName: item.documentName,
     excerpt: item.snippet,
     sourceType: item.sourceType,
+    citation: item.citation,
+    source: item.source,
+    confidence: item.confidence,
   }));
+}
+
+function toUploadedDocumentNames(evidence: EvidenceItem[]): string[] {
+  const names: string[] = [];
+  for (const item of evidence) {
+    const name = item.documentName?.trim();
+    if (!name || names.includes(name)) continue;
+    names.push(name);
+  }
+  return names;
 }
 
 export function buildPromptContext(params: {
@@ -63,7 +76,9 @@ export function buildPromptContext(params: {
     accusedProductFeature: claimElement.accusedProductFeature,
     currentReasoning: claimElement.reasoning,
     currentEvidenceSource: claimElement.evidenceSource,
+    claimStatus: claimElement.status,
     supportingDocuments: toSupportingDocuments(evidence),
+    uploadedDocumentNames: toUploadedDocumentNames(evidence),
     conversationHistory: toConversationTurns(messages),
     analystInstruction,
   };

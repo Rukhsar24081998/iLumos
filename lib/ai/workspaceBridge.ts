@@ -171,6 +171,10 @@ export async function resolveAssistantMessage(
     });
 
     const aiResponse = await fetchLiveSuggestion(request);
+    const knownDocumentNames = params.evidence
+      .map((item) => item.documentName?.trim())
+      .filter((name): name is string => Boolean(name));
+
     const message = mapAIResponseToAssistantMessage(aiResponse, {
       claimElementId:
         params.baseSuggestion?.claimElementId ?? params.claimElement.id,
@@ -186,6 +190,7 @@ export async function resolveAssistantMessage(
       proposedAccusedProductFeature:
         params.baseSuggestion?.proposedAccusedProductFeature ??
         aiResponse.proposedUpdates.accusedProductFeature,
+      knownDocumentNames,
     });
 
     if (process.env.NODE_ENV === "development") {

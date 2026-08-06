@@ -58,6 +58,12 @@ export function WorkspaceApp() {
     return () => window.clearTimeout(timer);
   }, [highlightedId]);
 
+  // Keep the sync guard aligned with React state. A desynced ref (e.g. after
+  // Fast Refresh) blocks handleSend while the UI still looks idle.
+  useEffect(() => {
+    typingThreadRef.current = typingThreadId;
+  }, [typingThreadId]);
+
   const selectedElement = useMemo(
     () => elements.find((element) => element.id === selectedId),
     [elements, selectedId]
@@ -156,7 +162,12 @@ export function WorkspaceApp() {
 
   const handleSend = useCallback(
     (prompt: string) => {
-      if (typingThreadRef.current) return;
+      // State is the source of truth for the idle UI. If the ref is still set
+      // while state is idle, recover so chips/Send are not silently swallowed.
+      if (typingThreadId === null && typingThreadRef.current !== null) {
+        typingThreadRef.current = null;
+      }
+      if (typingThreadId !== null || typingThreadRef.current) return;
 
       const threadId = selectedId;
       const stamp = new Date();
@@ -189,19 +200,30 @@ export function WorkspaceApp() {
       );
 
       void (async () => {
-        const { message } = await resolveAssistantMessage({
-          prompt,
-          threadId,
-          claimElement,
-          evidence: evidenceForClaim,
-          messages: threadMessages,
-          version: 1,
-          minDelayMs: TYPING_DELAY_MS,
-        });
-        commitAssistant(threadId, message);
+        try {
+          const { message } = await resolveAssistantMessage({
+            prompt,
+            threadId,
+            claimElement,
+            evidence: evidenceForClaim,
+            messages: threadMessages,
+            version: 1,
+            minDelayMs: TYPING_DELAY_MS,
+          });
+          commitAssistant(threadId, message);
+        } catch {
+          clearTyping(threadId);
+        }
       })();
     },
-    [beginTyping, clearTyping, commitAssistant, selectedId, updateMessages]
+    [
+      beginTyping,
+      clearTyping,
+      commitAssistant,
+      selectedId,
+      typingThreadId,
+      updateMessages,
+    ]
   );
 
   const patchSuggestionStatus = useCallback(
@@ -240,7 +262,16 @@ export function WorkspaceApp() {
 
   const handleAccept = useCallback(
     (suggestion: SuggestionPayload) => {
-      if (suggestion.status !== "pending" || typingThreadRef.current) return;
+      if (typingThreadId === null && typingThreadRef.current !== null) {
+        typingThreadRef.current = null;
+      }
+      if (
+        suggestion.status !== "pending" ||
+        typingThreadId !== null ||
+        typingThreadRef.current
+      ) {
+        return;
+      }
 
       patchSuggestionStatus(suggestion.id, "accepted");
       setActiveSuggestionId(suggestion.id);
@@ -296,12 +327,27 @@ export function WorkspaceApp() {
         ),
       ]);
     },
-    [makeSystemMessage, patchSuggestionStatus, selectedId, updateMessages]
+    [
+      makeSystemMessage,
+      patchSuggestionStatus,
+      selectedId,
+      typingThreadId,
+      updateMessages,
+    ]
   );
 
   const handleReject = useCallback(
     (suggestion: SuggestionPayload) => {
-      if (suggestion.status !== "pending" || typingThreadRef.current) return;
+      if (typingThreadId === null && typingThreadRef.current !== null) {
+        typingThreadRef.current = null;
+      }
+      if (
+        suggestion.status !== "pending" ||
+        typingThreadId !== null ||
+        typingThreadRef.current
+      ) {
+        return;
+      }
 
       patchSuggestionStatus(suggestion.id, "rejected");
       setActiveSuggestionId(suggestion.id);
@@ -313,12 +359,27 @@ export function WorkspaceApp() {
         ),
       ]);
     },
-    [makeSystemMessage, patchSuggestionStatus, selectedId, updateMessages]
+    [
+      makeSystemMessage,
+      patchSuggestionStatus,
+      selectedId,
+      typingThreadId,
+      updateMessages,
+    ]
   );
 
   const handleRefine = useCallback(
     (suggestion: SuggestionPayload) => {
-      if (suggestion.status !== "pending" || typingThreadRef.current) return;
+      if (typingThreadId === null && typingThreadRef.current !== null) {
+        typingThreadRef.current = null;
+      }
+      if (
+        suggestion.status !== "pending" ||
+        typingThreadId !== null ||
+        typingThreadRef.current
+      ) {
+        return;
+      }
 
       const stamp = new Date();
       const threadId = selectedId;
@@ -362,22 +423,33 @@ export function WorkspaceApp() {
       );
 
       void (async () => {
-        const { message } = await resolveAssistantMessage({
-          prompt: "Refine Further",
-          threadId,
-          claimElement,
-          evidence: evidenceForClaim,
-          messages: [...thread, userMessage],
-          version: nextVersion,
-          intro:
-            "Here's a more technically grounded version based on your refinement request.",
-          baseSuggestion: suggestion,
-          minDelayMs: TYPING_DELAY_MS,
-        });
-        commitAssistant(threadId, message);
+        try {
+          const { message } = await resolveAssistantMessage({
+            prompt: "Refine Further",
+            threadId,
+            claimElement,
+            evidence: evidenceForClaim,
+            messages: [...thread, userMessage],
+            version: nextVersion,
+            intro:
+              "Here's a more technically grounded version based on your refinement request.",
+            baseSuggestion: suggestion,
+            minDelayMs: TYPING_DELAY_MS,
+          });
+          commitAssistant(threadId, message);
+        } catch {
+          clearTyping(threadId);
+        }
       })();
     },
-    [beginTyping, clearTyping, commitAssistant, selectedId, updateMessages]
+    [
+      beginTyping,
+      clearTyping,
+      commitAssistant,
+      selectedId,
+      typingThreadId,
+      updateMessages,
+    ]
   );
 
   return (

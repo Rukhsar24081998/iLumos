@@ -35,13 +35,60 @@ export function SuggestionCard({
   const detailsId = useId();
   const timeLabel = suggestion.timeLabel;
   const version = suggestion.version ?? 1;
-  const confidence =
-    typeof suggestion.confidence === "number" ? suggestion.confidence : 0;
-  const sources = suggestion.evidenceSources ?? [];
+  const rawConfidence =
+    typeof suggestion.confidence === "number" &&
+    Number.isFinite(suggestion.confidence)
+      ? suggestion.confidence
+      : 0.55;
+  const confidence = Math.min(1, Math.max(0.15, rawConfidence));
+  const sources = (suggestion.evidenceSources ?? []).filter(
+    (name) =>
+      typeof name === "string" &&
+      name.trim() &&
+      !["undefined", "null", "true", "false"].includes(name.trim().toLowerCase())
+  );
+  const primarySource =
+    typeof suggestion.primarySource === "string" &&
+    suggestion.primarySource.trim() &&
+    !["undefined", "null", "true", "false"].includes(
+      suggestion.primarySource.trim().toLowerCase()
+    )
+      ? suggestion.primarySource.trim()
+      : sources[0] ?? "Supporting documents";
+  const citation =
+    typeof suggestion.citation === "string" &&
+    suggestion.citation.trim() &&
+    !["undefined", "null", "true", "false", "noevidencefound"].includes(
+      suggestion.citation.trim().toLowerCase()
+    )
+      ? suggestion.citation.trim()
+      : "";
+  const summary =
+    typeof suggestion.summary === "string" ? suggestion.summary.trim() : "";
+  const title =
+    typeof suggestion.title === "string" && suggestion.title.trim()
+      ? suggestion.title.trim()
+      : "Suggestion";
+  const originalReasoning =
+    typeof suggestion.originalReasoning === "string"
+      ? suggestion.originalReasoning.trim()
+      : "";
+  const suggestedReasoning =
+    typeof suggestion.suggestedReasoning === "string"
+      ? suggestion.suggestedReasoning.trim()
+      : "";
+  const evidenceText =
+    typeof suggestion.evidence === "string" ? suggestion.evidence.trim() : "";
+  const statusLabel =
+    suggestion.status === "accepted" ||
+    suggestion.status === "rejected" ||
+    suggestion.status === "pending"
+      ? suggestion.status
+      : "pending";
 
   return (
     <article
-      aria-label={suggestion.title ?? "Suggestion"}
+      aria-label={title}
       className={cn(
         "w-full max-w-full min-w-0 overflow-hidden rounded-xl border bg-card shadow-sm transition-colors",
         suggestion.status === "accepted" && "border-emerald-200 bg-emerald-50/20",
@@ -61,7 +108,7 @@ export function SuggestionCard({
               "rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300"
             )}
           >
-            {suggestion.title ?? "Suggestion"}
+            {title}
           </button>
           {version > 1 ? (
             <Badge
@@ -78,7 +125,7 @@ export function SuggestionCard({
             {(confidence * 100).toFixed(0)}% confidence
           </Badge>
           <Badge variant="outline" className="text-[10px] capitalize">
-            {suggestion.status ?? "pending"}
+            {statusLabel}
           </Badge>
           {timeLabel ? (
             <span className="text-[10px] text-muted-foreground/70">
@@ -93,19 +140,21 @@ export function SuggestionCard({
           aria-pressed={isActive}
           className="w-full break-words whitespace-normal text-left text-sm leading-snug text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300"
         >
-          {suggestion.summary ?? ""}
+          {summary}
         </button>
 
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground/80">
           <span className="inline-flex min-w-0 max-w-full items-center gap-1">
             <FileText className="size-3.5 shrink-0 text-orange-500" aria-hidden />
             <span className="min-w-0 break-all font-medium text-foreground/80">
-              {suggestion.primarySource ?? "—"}
+              {primarySource}
             </span>
           </span>
-          <span className="min-w-0 break-all text-orange-800/80">
-            {suggestion.citation ?? ""}
-          </span>
+          {citation ? (
+            <span className="min-w-0 break-all text-orange-800/80">
+              {citation}
+            </span>
+          ) : null}
         </div>
 
         {suggestion.isNewRowProposal ? (
@@ -139,16 +188,16 @@ export function SuggestionCard({
           >
             <DetailBlock
               label="Original Reasoning"
-              value={suggestion.originalReasoning ?? ""}
+              value={originalReasoning}
               muted
             />
             <DetailBlock
               label="Improved Reasoning"
-              value={suggestion.suggestedReasoning ?? ""}
+              value={suggestedReasoning}
             />
             <DetailBlock
               label="Supporting Evidence"
-              value={suggestion.evidence ?? ""}
+              value={evidenceText}
             />
             <div className="min-w-0 overflow-hidden">
               <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/80">
@@ -163,7 +212,7 @@ export function SuggestionCard({
                 Citations
               </p>
               <p className="break-all text-xs text-orange-800">
-                {suggestion.citation ?? "—"}
+                {citation || "—"}
               </p>
             </div>
           </div>

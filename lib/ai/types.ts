@@ -8,6 +8,12 @@ export interface SupportingDocumentContext {
   documentName: string;
   excerpt?: string;
   sourceType?: string;
+  /** Full citation label from the evidence panel, when available. */
+  citation?: string;
+  /** Human-readable source / context line. */
+  source?: string;
+  /** Evidence-item confidence (0–1), when available. */
+  confidence?: number;
 }
 
 /** Citation returned by the AI for a suggestion. */
@@ -41,7 +47,11 @@ export interface PromptContext {
   accusedProductFeature: string;
   currentReasoning: string;
   currentEvidenceSource: string;
+  /** Claim chart status (needs_review | improved | accepted). */
+  claimStatus?: string;
   supportingDocuments: SupportingDocumentContext[];
+  /** Distinct uploaded document names available for citation. */
+  uploadedDocumentNames: string[];
   conversationHistory: ConversationTurn[];
   analystInstruction: string;
 }

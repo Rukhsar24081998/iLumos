@@ -2,6 +2,11 @@
  * Validate and normalize Gemini JSON into AIResponse.
  */
 
+import {
+  clampConfidence,
+  normalizeConfidenceForDisplay,
+  sanitizeDisplayText,
+} from "@/lib/ai/displayText";
 import { AIParseError } from "@/lib/ai/errors";
 import { aiDebug } from "@/lib/ai/logger";
 import type { AISuggestionSchema } from "@/lib/ai/schema";
@@ -15,19 +20,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function requireString(
+/**
+ * Prefer a non-empty string; fall back without treating absence as fatal.
+ */
+function softString(
   record: Record<string, unknown>,
   key: string,
-  path: string
+  fallback: string
 ): string {
   const value = record[key];
-  if (typeof value !== "string" || value.trim().length === 0) {
-    throw new AIParseError(`Invalid AI payload: "${path}" must be a non-empty string.`, {
-      key,
-      value,
-    });
-  }
-  return value;
+  if (typeof value === "string" && value.trim()) return value.trim();
+  return fallback;
 }
 
 function optionalString(
@@ -36,43 +39,82 @@ function optionalString(
 ): string | undefined {
   const value = record[key];
   if (value === undefined || value === null) return undefined;
-  if (typeof value !== "string") {
-    throw new AIParseError(`Invalid AI payload: "${key}" must be a string when provided.`, {
-      key,
-      value,
-    });
-  }
-  return value;
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed || undefined;
 }
 
-function requireNumber(
-  record: Record<string, unknown>,
-  key: string
-): number {
-  const value = record[key];
-  if (typeof value !== "number" || Number.isNaN(value)) {
-    throw new AIParseError(`Invalid AI payload: "${key}" must be a number.`, {
-      key,
-      value,
-    });
+function parseBooleanFlag(value: unknown): boolean | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const lower = value.trim().toLowerCase();
+    if (lower === "true") return true;
+    if (lower === "false") return false;
   }
-  return value;
+  return undefined;
+}
+
+/**
+ * Parse confidence without defaulting missing/weak values to 0%.
+ */
+function parseConfidence(
+  record: Record<string, unknown>,
+  options: { hasEvidenceSignals: boolean; noEvidenceFound: boolean }
+): number {
+  const raw = record.confidence;
+  let parsed: number | undefined;
+
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    parsed = raw > 1 && raw <= 100 ? raw / 100 : raw;
+  } else if (typeof raw === "string" && raw.trim()) {
+    const cleaned = raw.trim().replace(/%/g, "");
+    const asNumber = Number(cleaned);
+    if (Number.isFinite(asNumber)) {
+      parsed = asNumber > 1 && asNumber <= 100 ? asNumber / 100 : asNumber;
+    }
+  }
+
+  if (parsed === undefined) {
+    // Missing confidence — estimate from evidence signals, never 0.
+    return options.noEvidenceFound
+      ? 0.3
+      : options.hasEvidenceSignals
+        ? 0.7
+        : 0.55;
+  }
+
+  return normalizeConfidenceForDisplay(clampConfidence(parsed), {
+    hasEvidence: options.hasEvidenceSignals,
+    noEvidenceFound: options.noEvidenceFound,
+  });
 }
 
 function parseProposedUpdates(
   value: unknown,
-  fallbackClaimElementId?: string
+  fallbackClaimElementId?: string,
+  fallbacks?: {
+    reasoning?: string;
+    evidenceSource?: string;
+  }
 ): ClaimUpdate {
   if (!isRecord(value)) {
-    throw new AIParseError(
-      'Invalid AI payload: "proposedUpdates" must be an object.',
-      { value }
-    );
+    if (!fallbackClaimElementId) {
+      throw new AIParseError(
+        'Invalid AI payload: "proposedUpdates" must be an object.',
+        { value }
+      );
+    }
+    return {
+      claimElementId: fallbackClaimElementId,
+      reasoning: fallbacks?.reasoning,
+      evidenceSource: fallbacks?.evidenceSource,
+    };
   }
 
   const claimElementId =
     typeof value.claimElementId === "string" && value.claimElementId.trim()
-      ? value.claimElementId
+      ? value.claimElementId.trim()
       : fallbackClaimElementId;
 
   if (!claimElementId) {
@@ -84,78 +126,66 @@ function parseProposedUpdates(
 
   const update: ClaimUpdate = { claimElementId };
 
-  if (value.reasoning !== undefined) {
-    if (typeof value.reasoning !== "string") {
-      throw new AIParseError(
-        'Invalid AI payload: "proposedUpdates.reasoning" must be a string.'
-      );
-    }
-    update.reasoning = value.reasoning;
-  }
-  if (value.accusedProductFeature !== undefined) {
-    if (typeof value.accusedProductFeature !== "string") {
-      throw new AIParseError(
-        'Invalid AI payload: "proposedUpdates.accusedProductFeature" must be a string.'
-      );
-    }
-    update.accusedProductFeature = value.accusedProductFeature;
-  }
-  if (value.evidenceSource !== undefined) {
-    if (typeof value.evidenceSource !== "string") {
-      throw new AIParseError(
-        'Invalid AI payload: "proposedUpdates.evidenceSource" must be a string.'
-      );
-    }
-    update.evidenceSource = value.evidenceSource;
-  }
-  if (value.patentClaimElement !== undefined) {
-    if (typeof value.patentClaimElement !== "string") {
-      throw new AIParseError(
-        'Invalid AI payload: "proposedUpdates.patentClaimElement" must be a string.'
-      );
-    }
-    update.patentClaimElement = value.patentClaimElement;
-  }
-  if (value.isNewRowProposal !== undefined) {
-    if (typeof value.isNewRowProposal !== "boolean") {
-      throw new AIParseError(
-        'Invalid AI payload: "proposedUpdates.isNewRowProposal" must be a boolean.'
-      );
-    }
-    update.isNewRowProposal = value.isNewRowProposal;
-  }
+  const reasoning = optionalString(value, "reasoning") ?? fallbacks?.reasoning;
+  if (reasoning) update.reasoning = reasoning;
+
+  const accused = optionalString(value, "accusedProductFeature");
+  if (accused) update.accusedProductFeature = accused;
+
+  const evidenceSource =
+    optionalString(value, "evidenceSource") ?? fallbacks?.evidenceSource;
+  if (evidenceSource) update.evidenceSource = evidenceSource;
+
+  const patentClaimElement = optionalString(value, "patentClaimElement");
+  if (patentClaimElement) update.patentClaimElement = patentClaimElement;
+
+  const isNew = parseBooleanFlag(value.isNewRowProposal);
+  if (isNew !== undefined) update.isNewRowProposal = isNew;
 
   return update;
 }
 
 function parseEvidenceCitations(value: unknown): EvidenceCitation[] {
   if (value === undefined || value === null) return [];
-  if (!Array.isArray(value)) {
-    throw new AIParseError(
-      'Invalid AI payload: "evidenceCitations" must be an array when provided.',
-      { value }
+  if (!Array.isArray(value)) return [];
+
+  const citations: EvidenceCitation[] = [];
+
+  for (const item of value) {
+    if (!isRecord(item)) continue;
+    const documentName = optionalString(item, "documentName");
+    const excerpt = optionalString(item, "excerpt");
+    if (!documentName || !excerpt) continue;
+    const location = optionalString(item, "location");
+    citations.push(
+      location
+        ? { documentName, excerpt, location }
+        : { documentName, excerpt }
     );
   }
 
-  return value.map((item, index) => {
-    if (!isRecord(item)) {
-      throw new AIParseError(
-        `Invalid AI payload: evidenceCitations[${index}] must be an object.`
-      );
-    }
-    const documentName = requireString(
-      item,
-      "documentName",
-      `evidenceCitations[${index}].documentName`
-    );
-    const excerpt = requireString(
-      item,
-      "excerpt",
-      `evidenceCitations[${index}].excerpt`
-    );
-    const location = optionalString(item, "location");
-    return location ? { documentName, excerpt, location } : { documentName, excerpt };
-  });
+  return citations;
+}
+
+function hasEvidenceSignals(
+  record: Record<string, unknown>,
+  citations: EvidenceCitation[]
+): boolean {
+  if (citations.length > 0) return true;
+  const citation = optionalString(record, "citation");
+  const supporting = optionalString(record, "supportingEvidence");
+  const primary = optionalString(record, "primarySource");
+  if (primary) return true;
+  if (citation && !/no (supporting )?citation|insufficient|not found/i.test(citation)) {
+    return true;
+  }
+  if (
+    supporting &&
+    !/insufficient|no (suitable )?evidence|not (enough|found)/i.test(supporting)
+  ) {
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -171,44 +201,69 @@ export function validateSuggestionPayload(
     });
   }
 
-  const summary = requireString(raw, "summary", "summary");
-  const improvedReasoning = requireString(
+  const noEvidenceFound = parseBooleanFlag(raw.noEvidenceFound) ?? false;
+  const evidenceCitations = parseEvidenceCitations(raw.evidenceCitations);
+  const evidenceSignals = hasEvidenceSignals(raw, evidenceCitations);
+
+  const summary = softString(
+    raw,
+    "summary",
+    noEvidenceFound
+      ? "Insufficient evidence was found in the uploaded documents to fully support this refinement."
+      : "Suggestion ready for review."
+  );
+  const improvedReasoning = softString(
     raw,
     "improvedReasoning",
-    "improvedReasoning"
+    softString(raw, "summary", "Reasoning could not be improved with the available evidence.")
   );
-  const supportingEvidence = requireString(
+  const supportingEvidence = softString(
     raw,
     "supportingEvidence",
-    "supportingEvidence"
+    noEvidenceFound
+      ? "No suitable supporting excerpt was available in the uploaded documents. Additional technical documentation is recommended."
+      : improvedReasoning
   );
-  const citation = requireString(raw, "citation", "citation");
-  const rationale = requireString(raw, "rationale", "rationale");
-  const confidence = requireNumber(raw, "confidence");
+  const citation = softString(
+    raw,
+    "citation",
+    noEvidenceFound
+      ? "No supporting citation available in the uploaded documents."
+      : evidenceCitations[0]
+        ? `${evidenceCitations[0].documentName}`
+        : softString(raw, "primarySource", "Supporting documents")
+  );
+  const rationale = softString(
+    raw,
+    "rationale",
+    noEvidenceFound
+      ? "Evidence in the current corpus is insufficient for a stronger claim mapping."
+      : "Updated using the strongest available supporting documents."
+  );
 
-  if (confidence < 0 || confidence > 1) {
+  // Required narrative fields still must be present after soft fill.
+  if (!summary || !improvedReasoning || !supportingEvidence || !citation || !rationale) {
     throw new AIParseError(
-      'Invalid AI payload: "confidence" must be between 0 and 1.',
-      { confidence }
+      "Invalid AI payload: required narrative fields are missing.",
+      { raw }
     );
   }
 
+  const confidence = parseConfidence(raw, {
+    hasEvidenceSignals: evidenceSignals && !noEvidenceFound,
+    noEvidenceFound,
+  });
+
   const proposedUpdates = parseProposedUpdates(
     raw.proposedUpdates,
-    options?.fallbackClaimElementId
-  );
-  const evidenceCitations = parseEvidenceCitations(raw.evidenceCitations);
-  const primarySource = optionalString(raw, "primarySource");
-
-  let noEvidenceFound: boolean | undefined;
-  if (raw.noEvidenceFound !== undefined) {
-    if (typeof raw.noEvidenceFound !== "boolean") {
-      throw new AIParseError(
-        'Invalid AI payload: "noEvidenceFound" must be a boolean when provided.'
-      );
+    options?.fallbackClaimElementId,
+    {
+      reasoning: improvedReasoning,
+      evidenceSource: citation,
     }
-    noEvidenceFound = raw.noEvidenceFound;
-  }
+  );
+
+  const primarySource = optionalString(raw, "primarySource");
 
   return {
     summary,
@@ -230,22 +285,63 @@ export function validateSuggestionPayload(
 export function normalizeSuggestionResponse(
   payload: AISuggestionSchema
 ): AIResponse {
+  const noEvidenceFound = payload.noEvidenceFound ?? false;
+  const evidenceCitations = payload.evidenceCitations ?? [];
+  const hasEvidence = evidenceCitations.length > 0 || !noEvidenceFound;
+
+  const confidence = normalizeConfidenceForDisplay(payload.confidence, {
+    hasEvidence: hasEvidence && !noEvidenceFound,
+    noEvidenceFound,
+  });
+
+  const citation =
+    sanitizeDisplayText(payload.citation) ||
+    (noEvidenceFound
+      ? "No supporting citation available in the uploaded documents."
+      : "Supporting documents");
+
+  const primarySource = sanitizeDisplayText(payload.primarySource) || undefined;
+
   return {
-    summary: payload.summary,
-    improvedReasoning: payload.improvedReasoning,
-    supportingEvidence: payload.supportingEvidence,
-    citation: payload.citation,
-    confidence: payload.confidence,
+    summary: sanitizeDisplayText(payload.summary, "Suggestion ready for review."),
+    improvedReasoning: sanitizeDisplayText(
+      payload.improvedReasoning,
+      payload.summary
+    ),
+    supportingEvidence: sanitizeDisplayText(
+      payload.supportingEvidence,
+      payload.improvedReasoning
+    ),
+    citation,
+    confidence,
     proposedUpdates: {
-      ...payload.proposedUpdates,
-      reasoning: payload.proposedUpdates.reasoning ?? payload.improvedReasoning,
+      claimElementId: payload.proposedUpdates.claimElementId,
+      reasoning:
+        sanitizeDisplayText(payload.proposedUpdates.reasoning) ||
+        sanitizeDisplayText(payload.improvedReasoning),
+      accusedProductFeature: sanitizeDisplayText(
+        payload.proposedUpdates.accusedProductFeature
+      ) || undefined,
       evidenceSource:
-        payload.proposedUpdates.evidenceSource ?? payload.citation,
+        sanitizeDisplayText(payload.proposedUpdates.evidenceSource) || citation,
+      patentClaimElement: sanitizeDisplayText(
+        payload.proposedUpdates.patentClaimElement
+      ) || undefined,
+      isNewRowProposal: payload.proposedUpdates.isNewRowProposal,
     },
-    rationale: payload.rationale,
-    evidenceCitations: payload.evidenceCitations ?? [],
-    primarySource: payload.primarySource,
-    noEvidenceFound: payload.noEvidenceFound ?? false,
+    rationale: sanitizeDisplayText(
+      payload.rationale,
+      "Updated using the available supporting documents."
+    ),
+    evidenceCitations: evidenceCitations
+      .map((item) => ({
+        documentName: sanitizeDisplayText(item.documentName),
+        excerpt: sanitizeDisplayText(item.excerpt),
+        location: sanitizeDisplayText(item.location) || undefined,
+      }))
+      .filter((item) => item.documentName && item.excerpt),
+    primarySource,
+    noEvidenceFound,
   };
 }
 
