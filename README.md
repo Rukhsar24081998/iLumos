@@ -266,7 +266,7 @@ Follow this sequence for a hiring-manager or reviewer demo. Full checklist: [`do
 | Accepted Refinement | `04-accepted.png` | Accepted suggestion reflected in the claim chart |
 | Export DOCX | `05-export.png` | Exported Microsoft Word claim chart |
 
-> **Screenshots will be added after the Vercel deployment.** Save the images under `docs/screenshots/` using the filenames above. Once the images are committed, GitHub will automatically render them in this README.
+> **Screenshots will be added after deployment.** Once the application is deployed on Vercel, production screenshots will be captured and saved under `docs/screenshots/` using the filenames listed above. After the screenshots are committed, this README will automatically display them on GitHub.
 
 ---
 
