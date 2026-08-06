@@ -1,36 +1,82 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# iLumos — Claim Chart Refinement MVP
 
-## Getting Started
+AI-powered conversational workspace for refining patent claim charts with a human-in-the-loop review workflow.
 
-First, run the development server:
+Built as a functional prototype for the Lumenci Product Manager assignment.
+
+## Stack
+
+- Next.js 15 (App Router)
+- TypeScript
+- Tailwind CSS
+- shadcn/ui
+
+## Getting started
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Environment variables
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Copy the example env file when you reach AI integration phases:
 
-## Learn More
+```bash
+cp .env.example .env.local
+```
 
-To learn more about Next.js, take a look at the following resources:
+| Variable | Purpose |
+| --- | --- |
+| `GEMINI_API_KEY` | Gemini API key (not used in Phase 1) |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Project structure
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```
+app/                    # App Router pages
+  page.tsx              # Setup screen (/)
+  workspace/page.tsx    # AI Workspace (/workspace)
+components/
+  layout/               # App shell + header
+  setup/                # Setup screen components
+  workspace/            # Workspace panels
+  common/               # Shared UI helpers
+  ui/                   # shadcn/ui primitives
+data/                   # Mock/session data (later phases)
+docs/                   # Product documentation (source of truth)
+hooks/                  # Shared React hooks (later phases)
+lib/                    # Utilities
+types/                  # Domain TypeScript types
+public/                 # Static assets
+```
 
-## Deploy on Vercel
+## Routes
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+| Route | Screen | Status |
+| --- | --- | --- |
+| `/` | Setup | Placeholder (Phase 1) |
+| `/workspace` | AI Workspace | Placeholder (Phase 1) |
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Documentation
+
+Product docs in `/docs` are the source of truth:
+
+1. `01_ProblemStatement.md`
+2. `02_ImplementationPlan.md`
+3. `03_UserFlow.md`
+4. `04_MockData.md`
+5. `05_UI_UX_Design.md`
+
+## Current phase
+
+**Phase 1 — Project Setup** is complete:
+
+- Runnable Next.js app shell
+- Shared layout (header + main)
+- Placeholder Setup and Workspace screens
+- Core domain types
+- Folder structure ready for incremental feature work
+
+Later phases will add uploads, mock data, chat, suggestions, review actions, edge cases, and Word export.
