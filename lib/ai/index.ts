@@ -10,11 +10,21 @@ export {
   parseSuggestionResponse,
   validateSuggestionPayload,
 } from "@/lib/ai/parser";
-export { generateSuggestion } from "@/lib/ai/gemini";
+export { generateSuggestion, generateSuggestionWithTimings } from "@/lib/ai/gemini";
+export type {
+  GenerateSuggestionResult,
+  GenerateSuggestionTimings,
+  StreamProgressHandler,
+} from "@/lib/ai/gemini";
 export {
   previewRefinementPrompt,
   requestRefinementSuggestion,
+  requestRefinementSuggestionWithTimings,
 } from "@/lib/ai/service";
+export {
+  clearEvidenceContextCache,
+  getCachedEvidenceContext,
+} from "@/lib/ai/evidenceContextCache";
 export {
   AIClientError,
   AIParseError,

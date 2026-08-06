@@ -1,14 +1,12 @@
 /**
- * Server API: claim-chart refinement via Gemini.
+ * Server API: claim-chart refinement via Gemini (streamed NDJSON).
  * Keeps API keys off the client. Falls back signal when mock should be used.
  */
-
-import { NextResponse } from "next/server";
 
 import {
   AIClientError,
   AIParseError,
-  requestRefinementSuggestion,
+  requestRefinementSuggestionWithTimings,
   type AIRequest,
 } from "@/lib/ai";
 
@@ -27,16 +25,20 @@ function isAIRequest(value: unknown): value is AIRequest {
   );
 }
 
+function ndjsonLine(payload: unknown): Uint8Array {
+  return new TextEncoder().encode(`${JSON.stringify(payload)}\n`);
+}
+
 export async function POST(request: Request) {
   if (process.env.AI_MODE === "mock" || process.env.NEXT_PUBLIC_AI_MODE === "mock") {
-    return NextResponse.json(
+    return Response.json(
       { useMock: true, error: "AI mode is set to mock.", code: "PROVIDER" },
       { status: 503 }
     );
   }
 
   if (!process.env.GEMINI_API_KEY?.trim()) {
-    return NextResponse.json(
+    return Response.json(
       {
         useMock: true,
         error: "GEMINI_API_KEY is not configured.",
@@ -50,14 +52,14 @@ export async function POST(request: Request) {
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json(
+    return Response.json(
       { error: "Invalid JSON body.", code: "INVALID_JSON" },
       { status: 400 }
     );
   }
 
   if (!isAIRequest(body)) {
-    return NextResponse.json(
+    return Response.json(
       { error: "Invalid AI request payload.", code: "PROVIDER" },
       { status: 400 }
     );
@@ -65,20 +67,19 @@ export async function POST(request: Request) {
 
   const instruction = body.context.analystInstruction?.trim() ?? "";
   if (!instruction) {
-    return NextResponse.json(
+    return Response.json(
       { error: "Refinement instruction is empty.", code: "PROVIDER" },
       { status: 400 }
     );
   }
 
   if (!body.context.claimElementId?.trim()) {
-    return NextResponse.json(
+    return Response.json(
       { error: "Claim element id is required.", code: "PROVIDER" },
       { status: 400 }
     );
   }
 
-  // Normalize empty optional collections so Gemini prompting stays stable.
   const normalized: AIRequest = {
     ...body,
     context: {
@@ -96,40 +97,75 @@ export async function POST(request: Request) {
     },
   };
 
-  try {
-    const suggestion = await requestRefinementSuggestion(normalized);
-    return NextResponse.json({ suggestion, source: "live" });
-  } catch (error) {
-    if (process.env.NODE_ENV === "development") {
-      console.warn("[iLumos:ai] /api/ai/refine failed", error);
-    }
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (payload: unknown) => {
+        controller.enqueue(ndjsonLine(payload));
+      };
 
-    if (error instanceof AIParseError) {
-      return NextResponse.json(
-        {
+      try {
+        send({ type: "status", phase: "generating" });
+
+        const result = await requestRefinementSuggestionWithTimings(
+          normalized,
+          {
+            onProgress: ({ chars }) => {
+              send({ type: "chunk", chars });
+            },
+          }
+        );
+
+        send({
+          type: "done",
+          suggestion: result.response,
+          source: "live",
+          timings: result.timings,
+        });
+        controller.close();
+      } catch (error) {
+        if (process.env.NODE_ENV === "development") {
+          console.warn("[iLumos:ai] /api/ai/refine failed", error);
+        }
+
+        if (error instanceof AIParseError) {
+          send({
+            type: "error",
+            useMock: true,
+            error: "AI response could not be parsed.",
+            code: "PARSE_VALIDATION",
+          });
+          controller.close();
+          return;
+        }
+
+        if (error instanceof AIClientError) {
+          send({
+            type: "error",
+            useMock: true,
+            error: error.message,
+            code: error.code,
+            retryable: error.retryable,
+          });
+          controller.close();
+          return;
+        }
+
+        send({
+          type: "error",
           useMock: true,
-          error: "AI response could not be parsed.",
-          code: "PARSE_VALIDATION",
-        },
-        { status: 502 }
-      );
-    }
+          error: "AI request failed.",
+          code: "PROVIDER",
+        });
+        controller.close();
+      }
+    },
+  });
 
-    if (error instanceof AIClientError) {
-      return NextResponse.json(
-        {
-          useMock: true,
-          error: error.message,
-          code: error.code,
-          retryable: error.retryable,
-        },
-        { status: 502 }
-      );
-    }
-
-    return NextResponse.json(
-      { useMock: true, error: "AI request failed.", code: "PROVIDER" },
-      { status: 502 }
-    );
-  }
+  return new Response(stream, {
+    status: 200,
+    headers: {
+      "Content-Type": "application/x-ndjson; charset=utf-8",
+      "Cache-Control": "no-store",
+    },
+  });
 }

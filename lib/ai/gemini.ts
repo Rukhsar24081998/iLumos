@@ -1,5 +1,5 @@
 /**
- * Gemini provider client — Phase 4.2 / 4.3.
+ * Gemini provider client — latency-optimized (stream + lean config).
  * Server/script use only. Do not import from Client Components.
  */
 
@@ -15,7 +15,6 @@ import { AIClientError, AIParseError } from "@/lib/ai/errors";
 import { aiDebug, aiWarn } from "@/lib/ai/logger";
 import { parseSuggestionResponse } from "@/lib/ai/parser";
 import { buildRefinementPrompt } from "@/lib/ai/prompt";
-import { AI_SUGGESTION_SCHEMA } from "@/lib/ai/schema";
 import type { AIRequest, AIResponse } from "@/lib/ai/types";
 
 /**
@@ -69,16 +68,17 @@ const GEMINI_RESPONSE_SCHEMA: ResponseSchema = {
   },
 };
 
-/**
- * Default model for the installed @google/generative-ai SDK.
- * Older Flash IDs (2.0 / 2.5) are retired or closed to new users.
- * Prefer 3.6 Flash (GA) for availability vs 3.5 under load.
- */
 const DEFAULT_MODEL = "gemini-3.6-flash";
-const MAX_ATTEMPTS = 3;
-const RETRY_DELAY_MS = 1500;
-/** Hard cap so generateContent never hangs forever (SDK RequestOptions.timeout). */
-const REQUEST_TIMEOUT_MS = 30_000;
+/** Initial attempt + one retry on transient failures. */
+const MAX_ATTEMPTS = 2;
+const RETRY_DELAY_MS = 800;
+/** Fail fast — 20s hard cap (Phase 9). */
+const REQUEST_TIMEOUT_MS = 20_000;
+/**
+ * Enough for SuggestionPayload JSON (summary, reasoning, evidence, citations).
+ * Avoids long narrative completions.
+ */
+const MAX_OUTPUT_TOKENS = 1024;
 
 function getApiKey(): string {
   const key = process.env.GEMINI_API_KEY?.trim();
@@ -91,7 +91,6 @@ function getApiKey(): string {
   return key;
 }
 
-/** Models retired / closed to new users that still appear in older .env files. */
 const RETIRED_MODELS: Record<string, string> = {
   "gemini-2.0-flash": DEFAULT_MODEL,
   "gemini-2.0-flash-001": DEFAULT_MODEL,
@@ -115,14 +114,6 @@ function getModelName(): string {
   return configured;
 }
 
-function schemaInstruction(): string {
-  return [
-    "Respond with a single JSON object only. No markdown fences.",
-    "The JSON must match this schema:",
-    JSON.stringify(AI_SUGGESTION_SCHEMA, null, 2),
-  ].join("\n");
-}
-
 /** Extract safe diagnostic fields from the raw SDK error (never log secrets). */
 function describeProviderError(error: unknown): Record<string, unknown> {
   if (error instanceof GoogleGenerativeAIFetchError) {
@@ -132,23 +123,13 @@ function describeProviderError(error: unknown): Record<string, unknown> {
       status: error.status,
       statusText: error.statusText,
       errorDetails: error.errorDetails,
-      stack: error.stack,
     };
   }
   if (error instanceof GoogleGenerativeAIAbortError) {
-    return {
-      name: error.name,
-      message: error.message,
-      stack: error.stack,
-      aborted: true,
-    };
+    return { name: error.name, message: error.message, aborted: true };
   }
   if (error instanceof Error) {
-    return {
-      name: error.name,
-      message: error.message,
-      stack: error.stack,
-    };
+    return { name: error.name, message: error.message };
   }
   return { value: String(error) };
 }
@@ -180,7 +161,6 @@ function isRetryableProviderError(error: unknown): boolean {
     if (status === 429 || status === 500 || status === 502 || status === 503) {
       return true;
     }
-    // 4xx (except 429) are not transient.
     if (typeof status === "number" && status >= 400 && status < 500) {
       return false;
     }
@@ -268,10 +248,6 @@ function mapProviderError(error: unknown): AIClientError {
   });
 }
 
-/**
- * Race the SDK promise against an application-level deadline.
- * Complements RequestOptions.timeout (AbortController) so hung fetches always settle.
- */
 async function withRequestTimeout<T>(
   label: string,
   work: Promise<T>,
@@ -298,7 +274,6 @@ async function withRequestTimeout<T>(
     });
     return await Promise.race([tracked, timeoutPromise]);
   } catch (error) {
-    // If the app-level deadline won, still absorb a late SDK rejection.
     if (!workSettled) {
       void work.catch(() => undefined);
     }
@@ -309,15 +284,28 @@ async function withRequestTimeout<T>(
   }
 }
 
-async function callGeminiOnce(prompt: string): Promise<string> {
+export type StreamProgressHandler = (info: {
+  chars: number;
+  delta: string;
+}) => void;
+
+/**
+ * Stream Gemini JSON tokens; accumulate full text for parsing.
+ * First tokens arrive ASAP for perceived latency (UI keeps typing indicator).
+ */
+async function callGeminiStreamOnce(
+  prompt: string,
+  onProgress?: StreamProgressHandler
+): Promise<string> {
   const hasKey = Boolean(process.env.GEMINI_API_KEY?.trim());
   aiDebug("GEMINI_API_KEY loaded", { present: hasKey });
 
   const apiKey = getApiKey();
   const modelName = getModelName();
-  aiDebug("Creating GenerativeModel", {
+  aiDebug("Creating GenerativeModel (stream)", {
     model: modelName,
     timeoutMs: REQUEST_TIMEOUT_MS,
+    maxOutputTokens: MAX_OUTPUT_TOKENS,
     responseMimeType: "application/json",
     hasResponseSchema: true,
   });
@@ -328,6 +316,7 @@ async function callGeminiOnce(prompt: string): Promise<string> {
       model: modelName,
       generationConfig: {
         temperature: 0.2,
+        maxOutputTokens: MAX_OUTPUT_TOKENS,
         responseMimeType: "application/json",
         responseSchema: GEMINI_RESPONSE_SCHEMA,
       },
@@ -335,32 +324,45 @@ async function callGeminiOnce(prompt: string): Promise<string> {
     { timeout: REQUEST_TIMEOUT_MS }
   );
 
-  const requestBody = `${schemaInstruction()}\n\n${prompt}`;
-  aiDebug("Calling Gemini", {
+  // Schema is enforced by responseSchema — do not re-send the full schema JSON.
+  const requestBody = prompt;
+  aiDebug("Calling Gemini stream", {
     model: modelName,
     promptChars: requestBody.length,
     timeoutMs: REQUEST_TIMEOUT_MS,
   });
-  aiDebug("await generateContent() starting", {
-    model: modelName,
-    timeoutMs: REQUEST_TIMEOUT_MS,
-  });
 
+  const streamStarted = Date.now();
   let result;
   try {
-    // @google/generative-ai 0.24.x: string | GenerateContentRequest.
-    // Second arg is SingleRequestOptions — timeout aborts the underlying fetch.
     result = await withRequestTimeout(
-      "generateContent",
-      model.generateContent(requestBody, { timeout: REQUEST_TIMEOUT_MS })
+      "generateContentStream",
+      model.generateContentStream(requestBody, { timeout: REQUEST_TIMEOUT_MS })
     );
-    aiDebug("await generateContent() resolved");
   } catch (error) {
-    logOriginalProviderError(error, "generateContent");
+    logOriginalProviderError(error, "generateContentStream");
     throw mapProviderError(error);
   }
 
-  const response = result.response;
+  let text = "";
+  let firstTokenMs: number | null = null;
+  try {
+    for await (const chunk of result.stream) {
+      const delta = chunk.text();
+      if (!delta) continue;
+      if (firstTokenMs === null) {
+        firstTokenMs = Date.now() - streamStarted;
+        aiDebug("stream first token", { ms: firstTokenMs });
+      }
+      text += delta;
+      onProgress?.({ chars: text.length, delta });
+    }
+  } catch (error) {
+    logOriginalProviderError(error, "stream-read");
+    throw mapProviderError(error);
+  }
+
+  const response = await result.response;
   const promptBlock = response.promptFeedback?.blockReason;
   const finishReason = response.candidates?.[0]?.finishReason;
   const blocked =
@@ -375,27 +377,33 @@ async function callGeminiOnce(prompt: string): Promise<string> {
     );
   }
 
-  const text = response.text()?.trim();
-  aiDebug("response.text() done", {
-    chars: text?.length ?? 0,
+  const finalText = text.trim() || response.text()?.trim() || "";
+  aiDebug("stream complete", {
+    chars: finalText.length,
+    streamMs: Date.now() - streamStarted,
+    firstTokenMs,
     finishReason: finishReason ?? null,
   });
-  if (!text) {
+
+  if (!finalText) {
     throw new AIClientError(
       "EMPTY_RESPONSE",
       "Gemini returned an empty response."
     );
   }
 
-  return text;
+  return finalText;
 }
 
-async function callGeminiWithRetry(prompt: string): Promise<string> {
+async function callGeminiWithRetry(
+  prompt: string,
+  onProgress?: StreamProgressHandler
+): Promise<string> {
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
     try {
-      return await callGeminiOnce(prompt);
+      return await callGeminiStreamOnce(prompt, onProgress);
     } catch (error) {
       lastError = error;
       const retryable =
@@ -426,45 +434,106 @@ async function callGeminiWithRetry(prompt: string): Promise<string> {
     : mapProviderError(lastError);
 }
 
+export interface GenerateSuggestionTimings {
+  promptBuildMs: number;
+  geminiMs: number;
+  parseMs: number;
+  totalMs: number;
+  promptChars: number;
+  firstTokenMs?: number | null;
+}
+
+export interface GenerateSuggestionResult {
+  response: AIResponse;
+  timings: GenerateSuggestionTimings;
+  rawChars: number;
+}
+
 /**
- * Generate a structured claim-chart refinement suggestion via Gemini.
- *
- * Input: AIRequest
- * Output: AIResponse matching AI_SUGGESTION_SCHEMA (validated)
+ * Generate a structured claim-chart refinement suggestion via Gemini (streamed).
  */
 export async function generateSuggestion(
-  request: AIRequest
+  request: AIRequest,
+  options?: { onProgress?: StreamProgressHandler }
 ): Promise<AIResponse> {
+  const { response } = await generateSuggestionWithTimings(request, options);
+  return response;
+}
+
+/** Same as generateSuggestion, plus development timing metrics. */
+export async function generateSuggestionWithTimings(
+  request: AIRequest,
+  options?: { onProgress?: StreamProgressHandler }
+): Promise<GenerateSuggestionResult> {
+  const totalStarted = Date.now();
+
+  const promptStarted = Date.now();
   const prompt = buildRefinementPrompt(request.context);
+  const promptBuildMs = Date.now() - promptStarted;
+
   aiDebug("Built refinement prompt", {
     requestId: request.requestId,
     claimElementId: request.context.claimElementId,
     promptChars: prompt.length,
+    promptBuildMs,
+    historyTurns: request.context.conversationHistory.length,
+    evidenceDocs: request.context.supportingDocuments.length,
   });
 
   try {
-    let rawText = await callGeminiWithRetry(prompt);
+    const geminiStarted = Date.now();
+    let firstTokenMs: number | null = null;
+    let rawText = await callGeminiWithRetry(prompt, (info) => {
+      if (firstTokenMs === null && info.chars > 0) {
+        firstTokenMs = Date.now() - geminiStarted;
+      }
+      options?.onProgress?.(info);
+    });
+    const geminiMs = Date.now() - geminiStarted;
+
+    const parseStarted = Date.now();
+    let response: AIResponse;
     try {
-      return parseSuggestionResponse(rawText, {
+      response = parseSuggestionResponse(rawText, {
         fallbackClaimElementId: request.context.claimElementId,
       });
     } catch (parseError) {
       if (!(parseError instanceof AIParseError)) throw parseError;
-      // One re-call when structured JSON still fails validation.
       aiWarn("Gemini JSON failed parse; regenerating once", {
         requestId: request.requestId,
         message: parseError.message,
       });
-      rawText = await callGeminiWithRetry(prompt);
-      return parseSuggestionResponse(rawText, {
+      rawText = await callGeminiWithRetry(prompt, options?.onProgress);
+      response = parseSuggestionResponse(rawText, {
         fallbackClaimElementId: request.context.claimElementId,
       });
     }
+    const parseMs = Date.now() - parseStarted;
+    const totalMs = Date.now() - totalStarted;
+
+    const timings: GenerateSuggestionTimings = {
+      promptBuildMs,
+      geminiMs,
+      parseMs,
+      totalMs,
+      promptChars: prompt.length,
+      firstTokenMs,
+    };
+
+    aiDebug("AI timing summary", {
+      requestId: request.requestId,
+      claimElementId: request.context.claimElementId,
+      ...timings,
+      rawChars: rawText.length,
+    });
+
+    return { response, timings, rawChars: rawText.length };
   } catch (error) {
     if (error instanceof AIParseError) {
       aiWarn("Gemini response failed validation", {
         requestId: request.requestId,
         message: error.message,
+        totalMs: Date.now() - totalStarted,
       });
       throw error;
     }
@@ -473,6 +542,7 @@ export async function generateSuggestion(
         requestId: request.requestId,
         code: error.code,
         message: error.message,
+        totalMs: Date.now() - totalStarted,
         providerError: describeProviderError(error.cause),
       });
       throw error;

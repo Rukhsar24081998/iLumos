@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChatPanel } from "@/components/workspace/ChatPanel";
 import { ClaimChartPanel } from "@/components/workspace/ClaimChartPanel";
 import { EvidencePanel } from "@/components/workspace/EvidencePanel";
+import { useWorkspaceExport } from "@/components/workspace/WorkspaceExportContext";
 import {
   buildWelcomeMessages,
   claimElementFromSuggestion,
@@ -20,6 +21,7 @@ import {
 import { resolveAssistantMessage } from "@/lib/ai/workspaceBridge";
 import { formatTimeLabel } from "@/lib/formatTimeLabel";
 import { WORKSPACE_RESET_FLAG } from "@/lib/workspaceReset";
+import { clearEvidenceContextCache } from "@/lib/ai/evidenceContextCache";
 import type {
   ChatMessage,
   ClaimElement,
@@ -54,6 +56,8 @@ export function WorkspaceApp() {
     Record<string, ChatMessage[]>
   >(createInitialMessages);
 
+  const { registerSnapshotSource, setWorkspaceBusy } = useWorkspaceExport();
+
   const typingThreadRef = useRef<string | null>(null);
   const selectedIdRef = useRef(selectedId);
   const messagesByClaimRef = useRef(messagesByClaim);
@@ -67,10 +71,25 @@ export function WorkspaceApp() {
   messagesByClaimRef.current = messagesByClaim;
   elementsRef.current = elements;
 
+  // Phase 6: register live chart + chat state for Export DOCX (read-only).
+  useEffect(() => {
+    return registerSnapshotSource(() => ({
+      elements: elementsRef.current,
+      messagesByClaim: messagesByClaimRef.current,
+    }));
+  }, [registerSnapshotSource]);
+
+  // Phase 7: surface AI busy to header session controls (presentation only).
+  useEffect(() => {
+    setWorkspaceBusy(typingThreadId !== null);
+    return () => setWorkspaceBusy(false);
+  }, [setWorkspaceBusy, typingThreadId]);
+
   const resetWorkspace = useCallback(() => {
     generationByThreadRef.current = {};
     actionLockRef.current = false;
     typingThreadRef.current = null;
+    clearEvidenceContextCache();
     setElements(INITIAL_CLAIM_ELEMENTS);
     setSelectedId("CE-3");
     setHighlightedId(null);
@@ -566,16 +585,16 @@ export function WorkspaceApp() {
   );
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto md:h-full md:overflow-hidden">
-      <div className="shrink-0 rounded-xl border border-border/80 bg-card px-4 py-1.5 shadow-sm">
+    <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto md:h-full md:overflow-hidden">
+      <div className="shrink-0 rounded-xl border border-border/80 bg-card px-3 py-2 shadow-sm sm:px-4 sm:py-2">
         <div className="min-w-0">
-          <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground/80">
+          <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
             Patent Analysis Session
           </p>
           <h1 className="mt-0.5 truncate text-lg font-semibold tracking-tight text-foreground sm:text-xl">
             {MATTER.title}
           </h1>
-          <p className="mt-0.5 text-xs text-muted-foreground/80">
+          <p className="mt-0.5 text-xs text-muted-foreground">
             {elements.length} Claim Element
             {elements.length === 1 ? "" : "s"}
             {" · "}
@@ -584,8 +603,8 @@ export function WorkspaceApp() {
         </div>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-2.5 md:h-full md:overflow-hidden md:grid-cols-[minmax(0,3fr)_minmax(0,4.2fr)_minmax(0,3fr)]">
-        <div className="min-h-[min(70vh,28rem)] overflow-hidden md:min-h-0 md:h-full">
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-2.5 md:h-full md:grid-cols-[minmax(0,3fr)_minmax(0,4.2fr)_minmax(0,3fr)] md:overflow-hidden lg:gap-3">
+        <div className="min-h-[min(60vh,24rem)] overflow-hidden md:min-h-0 md:h-full">
           <ClaimChartPanel
             elements={elements}
             selectedId={selectedId}
@@ -593,7 +612,7 @@ export function WorkspaceApp() {
             onSelect={handleSelect}
           />
         </div>
-        <div className="min-h-[min(70vh,28rem)] overflow-hidden md:min-h-0 md:h-full">
+        <div className="min-h-[min(60vh,24rem)] overflow-hidden md:min-h-0 md:h-full">
           <ChatPanel
             selectedElement={selectedElement}
             evidence={evidence}
@@ -609,7 +628,7 @@ export function WorkspaceApp() {
             onSelectSuggestion={setActiveSuggestionId}
           />
         </div>
-        <div className="min-h-[min(70vh,28rem)] overflow-hidden md:min-h-0 md:h-full">
+        <div className="min-h-[min(60vh,24rem)] overflow-hidden md:min-h-0 md:h-full">
           <EvidencePanel
             selectedElement={evidenceElement}
             evidence={evidence}

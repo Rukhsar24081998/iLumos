@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { FileText } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/workspace/EmptyState";
 import { cn } from "@/lib/utils";
 import type { ClaimElement, EvidenceItem } from "@/types/workspace";
 
@@ -77,7 +78,6 @@ export function EvidencePanel({
   }, [selectedElement?.id]);
 
   const keywordList = keywords ?? [];
-  const safeEvidence = evidence;
 
   return (
     <section
@@ -103,15 +103,15 @@ export function EvidencePanel({
               <p className="break-words text-sm font-semibold leading-snug text-foreground">
                 {selectedElement.patentClaimElement ?? "Untitled claim element"}
               </p>
-              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground/80">
+              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
                 <span>
-                  {safeEvidence.length} supporting document
-                  {safeEvidence.length === 1 ? "" : "s"}
+                  {evidence.length} supporting document
+                  {evidence.length === 1 ? "" : "s"}
                 </span>
                 <span className="text-border" aria-hidden>
                   ·
                 </span>
-                <span className="text-muted-foreground/70">
+                <span className="text-muted-foreground/80">
                   {selectedElement.id ?? ""}
                 </span>
               </div>
@@ -130,8 +130,9 @@ export function EvidencePanel({
               ) : null}
             </div>
           ) : (
-            <p className="text-[11px] text-muted-foreground/80">
-              Select a claim element to view evidence
+            <p className="text-[11px] leading-snug text-muted-foreground">
+              No claim selected. Uploaded documents and snippets appear here
+              after you choose a claim element.
             </p>
           )}
         </div>
@@ -142,23 +143,33 @@ export function EvidencePanel({
         className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-2.5"
       >
         <div className="space-y-1.5">
-          {safeEvidence.length === 0 ? (
-            <p className="rounded-lg border border-dashed border-border px-3 py-6 text-center text-xs text-muted-foreground">
-              No evidence snippets for this selection.
-            </p>
+          {!selectedElement ? (
+            <EmptyState
+              title="No claim selected"
+              description="Select a claim element from the chart to review supporting evidence and citations."
+            />
+          ) : evidence.length === 0 ? (
+            <EmptyState
+              title="No supporting evidence"
+              description="No sufficient technical evidence was found for this claim element in the uploaded documents."
+            />
           ) : (
-            safeEvidence.map((item) => {
+            evidence.map((item) => {
               if (!item?.id) return null;
               const isHighlighted =
                 hasActiveSources && matchesActiveSource(item, activeSources);
               const snippet = highlightedSnippets.find(
                 (entry) => entry.id === item.id
               )?.nodes;
+              const confidenceLabel =
+                typeof item.confidence === "number"
+                  ? `${(item.confidence * 100).toFixed(0)}% confidence`
+                  : "Confidence unavailable";
               return (
                 <article
                   key={item.id}
                   className={cn(
-                    "min-w-0 max-w-full overflow-hidden rounded-lg border bg-background p-2.5 transition-colors duration-300",
+                    "min-w-0 max-w-full overflow-hidden rounded-lg border bg-background p-2.5 transition-colors duration-200",
                     isHighlighted
                       ? "border-orange-300 bg-orange-50/40 ring-1 ring-orange-200"
                       : "border-border/80",
@@ -176,12 +187,13 @@ export function EvidencePanel({
                           {item.documentName ?? "Untitled document"}
                         </p>
                       </div>
-                      <p className="mt-0.5 pl-5 text-[10px] text-muted-foreground/75">
+                      <p className="mt-0.5 pl-5 text-[10px] text-muted-foreground">
                         {item.sourceType ?? "Document"}
                       </p>
                     </div>
                     <Badge
                       variant="outline"
+                      aria-label={confidenceLabel}
                       className="shrink-0 border-orange-200 bg-orange-50 text-[10px] font-medium text-orange-800"
                     >
                       {typeof item.confidence === "number"
@@ -195,15 +207,15 @@ export function EvidencePanel({
                   </p>
 
                   <div className="mt-1.5 space-y-0.5 overflow-hidden border-t border-border/50 pt-1.5">
-                    <p className="break-words text-[10px] leading-snug text-muted-foreground/75">
-                      <span className="font-medium text-muted-foreground/90">
+                    <p className="break-words text-[10px] leading-snug text-muted-foreground">
+                      <span className="font-medium text-foreground/70">
                         Citation
                       </span>
                       <span className="mx-1 text-border">·</span>
                       {item.citation ?? "—"}
                     </p>
-                    <p className="break-words text-[10px] leading-snug text-muted-foreground/75">
-                      <span className="font-medium text-muted-foreground/90">
+                    <p className="break-words text-[10px] leading-snug text-muted-foreground">
+                      <span className="font-medium text-foreground/70">
                         Context
                       </span>
                       <span className="mx-1 text-border">·</span>

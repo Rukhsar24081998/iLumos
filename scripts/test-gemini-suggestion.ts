@@ -14,7 +14,7 @@ import { resolve } from "node:path";
 import {
   AIClientError,
   AIParseError,
-  generateSuggestion,
+  generateSuggestionWithTimings,
   type AIRequest,
 } from "../lib/ai";
 
@@ -74,9 +74,12 @@ async function main() {
   console.log("Calling generateSuggestion() with sample CE-3 request…\n");
 
   try {
-    const response = await generateSuggestion(sampleRequest);
+    const { response, timings, rawChars } =
+      await generateSuggestionWithTimings(sampleRequest);
     console.log("Success — AIResponse:\n");
     console.log(JSON.stringify(response, null, 2));
+    console.log("\nTimings:", timings);
+    console.log("Raw response chars:", rawChars);
   } catch (error) {
     if (error instanceof AIParseError) {
       console.error("AIParseError:", error.message);

@@ -1,7 +1,7 @@
 /**
  * Client-safe workspace AI bridge.
- * Calls the server refine API when live AI is enabled; otherwise / on failure
- * falls back to the existing mock assistant generator.
+ * Calls the streamed server refine API when live AI is enabled; otherwise /
+ * on failure falls back to the existing mock assistant generator.
  */
 
 import {
@@ -26,8 +26,12 @@ import type {
 
 export type WorkspaceAIMode = "auto" | "live" | "mock";
 
-/** Client-side ceiling for /api/ai/refine (server Gemini timeout is 30s). */
-const CLIENT_FETCH_TIMEOUT_MS = 45_000;
+/** Client ceiling slightly above server 20s Gemini timeout. */
+const CLIENT_FETCH_TIMEOUT_MS = 22_000;
+/** Keep typing indicator visible briefly for live replies (perceived polish). */
+const LIVE_MIN_DELAY_MS = 280;
+/** Mock path keeps a slightly longer delay so demo pacing feels intentional. */
+const MOCK_MIN_DELAY_MS = 900;
 
 function getAIMode(): WorkspaceAIMode {
   const mode = process.env.NEXT_PUBLIC_AI_MODE?.trim().toLowerCase();
@@ -61,45 +65,133 @@ function makeTextAssistantMessage(
   };
 }
 
+type StreamEvent =
+  | { type: "status"; phase?: string }
+  | { type: "chunk"; chars?: number }
+  | {
+      type: "done";
+      suggestion: AIResponse;
+      source?: string;
+      timings?: Record<string, unknown>;
+    }
+  | {
+      type: "error";
+      error?: string;
+      code?: string;
+      useMock?: boolean;
+      retryable?: boolean;
+    };
+
 async function fetchLiveSuggestion(request: AIRequest): Promise<AIResponse> {
   const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), CLIENT_FETCH_TIMEOUT_MS);
+  const timer = window.setTimeout(
+    () => controller.abort(),
+    CLIENT_FETCH_TIMEOUT_MS
+  );
 
   try {
     const response = await fetch("/api/ai/refine", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/x-ndjson",
+      },
       body: JSON.stringify(request),
       signal: controller.signal,
     });
 
-    const payload = (await response.json().catch(() => ({}))) as {
-      suggestion?: AIResponse;
-      error?: string;
-      useMock?: boolean;
-      code?: string;
-    };
-
-    if (!response.ok || payload.useMock || !payload.suggestion) {
-      const message = payload.error || `AI request failed (${response.status})`;
-      const error = new Error(message) as Error & {
+    // Non-stream error payloads (mock mode / missing key).
+    const contentType = response.headers.get("content-type") ?? "";
+    if (!contentType.includes("ndjson")) {
+      const payload = (await response.json().catch(() => ({}))) as {
+        suggestion?: AIResponse;
+        error?: string;
+        useMock?: boolean;
         code?: string;
-        retryable?: boolean;
       };
-      if (payload.code) error.code = payload.code;
-      if (
-        response.status === 429 ||
-        response.status === 502 ||
-        response.status === 503 ||
-        payload.code === "TIMEOUT" ||
-        payload.code === "NETWORK"
-      ) {
-        error.retryable = true;
+
+      if (!response.ok || payload.useMock || !payload.suggestion) {
+        const message = payload.error || `AI request failed (${response.status})`;
+        const error = new Error(message) as Error & {
+          code?: string;
+          retryable?: boolean;
+        };
+        if (payload.code) error.code = payload.code;
+        if (
+          response.status === 429 ||
+          response.status === 502 ||
+          response.status === 503 ||
+          payload.code === "TIMEOUT" ||
+          payload.code === "NETWORK"
+        ) {
+          error.retryable = true;
+        }
+        throw error;
       }
-      throw error;
+      return payload.suggestion;
     }
 
-    return payload.suggestion;
+    if (!response.ok || !response.body) {
+      throw Object.assign(new Error(`AI request failed (${response.status})`), {
+        retryable: response.status >= 500,
+      });
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let suggestion: AIResponse | null = null;
+
+    const handleEvent = (event: StreamEvent) => {
+      if (event.type === "done" && event.suggestion) {
+        suggestion = event.suggestion;
+        if (
+          process.env.NODE_ENV === "development" &&
+          event.timings &&
+          typeof console !== "undefined"
+        ) {
+          console.debug("[iLumos:ai] stream timings", event.timings);
+        }
+        return;
+      }
+      if (event.type === "error") {
+        const error = new Error(
+          event.error || "AI request failed"
+        ) as Error & { code?: string; retryable?: boolean };
+        if (event.code) error.code = event.code;
+        if (event.retryable || event.code === "TIMEOUT" || event.code === "NETWORK") {
+          error.retryable = true;
+        }
+        throw error;
+      }
+    };
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        handleEvent(JSON.parse(trimmed) as StreamEvent);
+      }
+    }
+
+    const rest = buffer.trim();
+    if (rest) {
+      handleEvent(JSON.parse(rest) as StreamEvent);
+    }
+
+    if (!suggestion) {
+      throw Object.assign(new Error("AI stream ended without a suggestion"), {
+        retryable: true,
+        code: "EMPTY_RESPONSE",
+      });
+    }
+
+    return suggestion;
   } catch (error) {
     if (
       error instanceof DOMException &&
@@ -176,7 +268,6 @@ export type ResolveAssistantResult = {
 export async function resolveAssistantMessage(
   params: ResolveAssistantParams
 ): Promise<ResolveAssistantResult> {
-  const minDelayMs = params.minDelayMs ?? 1100;
   const started = Date.now();
   const threadId = params.threadId || "unknown";
 
@@ -184,7 +275,11 @@ export async function resolveAssistantMessage(
     message: ChatMessage,
     source: ResolveAssistantResult["source"]
   ): Promise<ResolveAssistantResult> => {
-    const remaining = Math.max(0, minDelayMs - (Date.now() - started));
+    const targetDelay =
+      source === "live"
+        ? Math.min(params.minDelayMs ?? LIVE_MIN_DELAY_MS, LIVE_MIN_DELAY_MS)
+        : Math.min(params.minDelayMs ?? MOCK_MIN_DELAY_MS, MOCK_MIN_DELAY_MS);
+    const remaining = Math.max(0, targetDelay - (Date.now() - started));
     if (remaining > 0) await sleep(remaining);
     return { message, source };
   };
@@ -192,10 +287,7 @@ export async function resolveAssistantMessage(
   const trimmedPrompt = params.prompt?.trim() ?? "";
   if (!trimmedPrompt) {
     return finish(
-      makeTextAssistantMessage(
-        threadId,
-        userFacingMessage("empty_prompt")
-      ),
+      makeTextAssistantMessage(threadId, userFacingMessage("empty_prompt")),
       "empty"
     );
   }
@@ -227,27 +319,31 @@ export async function resolveAssistantMessage(
     return finish(mock(), "mock");
   }
 
-  const claimForRequest =
-    params.baseSuggestion && params.baseSuggestion.isNewRowProposal
-      ? {
-          ...claimElement,
-          id: params.baseSuggestion.claimElementId,
-          patentClaimElement:
-            params.baseSuggestion.proposedPatentClaimElement ??
-            claimElement.patentClaimElement,
-          accusedProductFeature:
-            params.baseSuggestion.proposedAccusedProductFeature ??
-            claimElement.accusedProductFeature,
-          reasoning: params.baseSuggestion.suggestedReasoning,
-          evidenceSource: params.baseSuggestion.citation,
-        }
-      : params.baseSuggestion
+  // Parallelize claim shaping with request assembly prep.
+  const [claimForRequest] = await Promise.all([
+    Promise.resolve(
+      params.baseSuggestion && params.baseSuggestion.isNewRowProposal
         ? {
             ...claimElement,
+            id: params.baseSuggestion.claimElementId,
+            patentClaimElement:
+              params.baseSuggestion.proposedPatentClaimElement ??
+              claimElement.patentClaimElement,
+            accusedProductFeature:
+              params.baseSuggestion.proposedAccusedProductFeature ??
+              claimElement.accusedProductFeature,
             reasoning: params.baseSuggestion.suggestedReasoning,
             evidenceSource: params.baseSuggestion.citation,
           }
-        : claimElement;
+        : params.baseSuggestion
+          ? {
+              ...claimElement,
+              reasoning: params.baseSuggestion.suggestedReasoning,
+              evidenceSource: params.baseSuggestion.citation,
+            }
+          : claimElement
+    ),
+  ]);
 
   const request = buildAIRequest({
     claimElement: claimForRequest,
@@ -290,10 +386,13 @@ export async function resolveAssistantMessage(
       console.debug("[iLumos:ai] Live Gemini suggestion applied", {
         claimElementId: message.suggestion?.claimElementId,
         documentCount: evidence.length,
+        promptChars: JSON.stringify(request.context).length,
+        totalClientMs: Date.now() - started,
       });
     }
     return finish(message, "live");
   } catch (firstError) {
+    // One client-level retry for transient failures, then mock fallback.
     if (isRetryableWorkspaceError(firstError)) {
       try {
         if (process.env.NODE_ENV === "development") {
@@ -301,7 +400,7 @@ export async function resolveAssistantMessage(
             kind: classifyWorkspaceError(firstError),
           });
         }
-        await sleep(400);
+        await sleep(300);
         const message = await attemptLive();
         return finish(message, "live");
       } catch (retryError) {

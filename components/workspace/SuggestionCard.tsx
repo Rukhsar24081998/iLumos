@@ -1,10 +1,11 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { ChevronDown, ChevronUp, FileText } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { LoadingSpinner } from "@/components/workspace/LoadingSpinner";
 import { cn } from "@/lib/utils";
 import type { SuggestionPayload } from "@/types/workspace";
 
@@ -12,10 +13,28 @@ interface SuggestionCardProps {
   suggestion: SuggestionPayload;
   isActive?: boolean;
   isActionable?: boolean;
+  /** True while any AI request is in flight (disables actions). */
+  isBusy?: boolean;
   onSelect?: () => void;
   onAccept: (suggestion: SuggestionPayload) => void;
   onReject: (suggestion: SuggestionPayload) => void;
   onRefine: (suggestion: SuggestionPayload) => void;
+}
+
+function suggestionStatusLabel(
+  status: SuggestionPayload["status"]
+): "Pending" | "Accepted" | "Rejected" {
+  if (status === "accepted") return "Accepted";
+  if (status === "rejected") return "Rejected";
+  return "Pending";
+}
+
+function suggestionStatusTone(
+  status: SuggestionPayload["status"]
+): "amber" | "emerald" | "slate" {
+  if (status === "accepted") return "emerald";
+  if (status === "rejected") return "slate";
+  return "amber";
 }
 
 /**
@@ -26,12 +45,16 @@ export function SuggestionCard({
   suggestion,
   isActive = false,
   isActionable = false,
+  isBusy = false,
   onSelect,
   onAccept,
   onReject,
   onRefine,
 }: SuggestionCardProps) {
   const [expanded, setExpanded] = useState(false);
+  const [pendingAction, setPendingAction] = useState<
+    "accept" | "reject" | "refine" | null
+  >(null);
   const detailsId = useId();
   const timeLabel = suggestion.timeLabel;
   const version = suggestion.version ?? 1;
@@ -79,18 +102,42 @@ export function SuggestionCard({
       : "";
   const evidenceText =
     typeof suggestion.evidence === "string" ? suggestion.evidence.trim() : "";
-  const statusLabel =
-    suggestion.status === "accepted" ||
-    suggestion.status === "rejected" ||
-    suggestion.status === "pending"
-      ? suggestion.status
-      : "pending";
+  const statusLabel = suggestionStatusLabel(suggestion.status);
+  const statusTone = suggestionStatusTone(suggestion.status);
+  const actionsLocked = !isActionable || pendingAction !== null;
+
+  useEffect(() => {
+    if (!isBusy && pendingAction === "refine") {
+      setPendingAction(null);
+    }
+  }, [isBusy, pendingAction]);
+
+  useEffect(() => {
+    if (pendingAction !== "accept" && pendingAction !== "reject") return;
+    const timer = window.setTimeout(() => setPendingAction(null), 200);
+    return () => window.clearTimeout(timer);
+  }, [pendingAction]);
+
+  const runAction = (
+    action: "accept" | "reject" | "refine",
+    handler: (suggestion: SuggestionPayload) => void
+  ) => {
+    if (actionsLocked) return;
+    setPendingAction(action);
+    handler(suggestion);
+  };
+
+  const disabledReason = isBusy
+    ? "Wait for the current AI request to finish"
+    : !isActionable
+      ? "Only the latest pending suggestion can be updated"
+      : undefined;
 
   return (
     <article
       aria-label={title}
       className={cn(
-        "w-full max-w-full min-w-0 overflow-hidden rounded-xl border bg-card shadow-sm transition-colors",
+        "w-full max-w-full min-w-0 overflow-hidden rounded-xl border bg-card shadow-sm transition-colors duration-200",
         suggestion.status === "accepted" && "border-emerald-200 bg-emerald-50/20",
         suggestion.status === "rejected" && "border-border opacity-60",
         suggestion.status === "pending" && "border-border/80",
@@ -120,15 +167,28 @@ export function SuggestionCard({
           ) : null}
           <Badge
             variant="outline"
+            aria-label={`${(confidence * 100).toFixed(0)} percent confidence`}
             className="border-orange-200 bg-orange-50 text-[10px] text-orange-800"
           >
             {(confidence * 100).toFixed(0)}% confidence
           </Badge>
-          <Badge variant="outline" className="text-[10px] capitalize">
+          <Badge
+            variant="outline"
+            aria-label={`Suggestion status: ${statusLabel}`}
+            className={cn(
+              "text-[10px]",
+              statusTone === "emerald" &&
+                "border-emerald-200 bg-emerald-50 text-emerald-800",
+              statusTone === "slate" &&
+                "border-slate-200 bg-slate-50 text-slate-700",
+              statusTone === "amber" &&
+                "border-amber-200 bg-amber-50 text-amber-800"
+            )}
+          >
             {statusLabel}
           </Badge>
           {timeLabel ? (
-            <span className="text-[10px] text-muted-foreground/70">
+            <span className="text-[10px] text-muted-foreground/80">
               {timeLabel}
             </span>
           ) : null}
@@ -143,7 +203,7 @@ export function SuggestionCard({
           {summary}
         </button>
 
-        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground/80">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
           <span className="inline-flex min-w-0 max-w-full items-center gap-1">
             <FileText className="size-3.5 shrink-0 text-orange-500" aria-hidden />
             <span className="min-w-0 break-all font-medium text-foreground/80">
@@ -168,7 +228,7 @@ export function SuggestionCard({
           aria-expanded={expanded}
           aria-controls={detailsId}
           onClick={() => setExpanded((value) => !value)}
-          className="inline-flex items-center gap-1 text-xs font-medium text-orange-700 hover:text-orange-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300"
+          className="inline-flex items-center gap-1 text-xs font-medium text-orange-700 transition-colors duration-150 hover:text-orange-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300"
         >
           {expanded ? (
             <>
@@ -195,10 +255,7 @@ export function SuggestionCard({
               label="Improved Reasoning"
               value={suggestedReasoning}
             />
-            <DetailBlock
-              label="Supporting Evidence"
-              value={evidenceText}
-            />
+            <DetailBlock label="Supporting Evidence" value={evidenceText} />
             <div className="min-w-0 overflow-hidden">
               <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/80">
                 Evidence Sources
@@ -224,29 +281,58 @@ export function SuggestionCard({
           type="button"
           variant="outline"
           size="sm"
-          disabled={!isActionable}
-          onClick={() => onReject(suggestion)}
+          disabled={actionsLocked}
+          title={disabledReason}
+          aria-label="Reject suggestion"
+          onClick={() => runAction("reject", onReject)}
+          className="transition-opacity duration-150"
         >
-          Reject
+          {pendingAction === "reject" ? (
+            <>
+              <LoadingSpinner />
+              Rejecting…
+            </>
+          ) : (
+            "Reject"
+          )}
         </Button>
         <Button
           type="button"
           variant="outline"
           size="sm"
-          disabled={!isActionable}
-          onClick={() => onRefine(suggestion)}
-          className="border-orange-200 text-orange-800 hover:bg-orange-50"
+          disabled={actionsLocked}
+          title={disabledReason}
+          aria-label="Refine suggestion further"
+          aria-busy={pendingAction === "refine"}
+          onClick={() => runAction("refine", onRefine)}
+          className="border-orange-200 text-orange-800 transition-opacity duration-150 hover:bg-orange-50"
         >
-          Refine Further
+          {pendingAction === "refine" ? (
+            <>
+              <LoadingSpinner className="text-orange-600" />
+              Refining…
+            </>
+          ) : (
+            "Refine Further"
+          )}
         </Button>
         <Button
           type="button"
           size="sm"
-          disabled={!isActionable}
-          onClick={() => onAccept(suggestion)}
-          className="bg-orange-500 text-white hover:bg-orange-600"
+          disabled={actionsLocked}
+          title={disabledReason}
+          aria-label="Accept suggestion"
+          onClick={() => runAction("accept", onAccept)}
+          className="bg-orange-500 text-white transition-opacity duration-150 hover:bg-orange-600"
         >
-          Accept
+          {pendingAction === "accept" ? (
+            <>
+              <LoadingSpinner className="text-white" />
+              Accepting…
+            </>
+          ) : (
+            "Accept"
+          )}
         </Button>
       </div>
     </article>

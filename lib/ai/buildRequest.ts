@@ -1,12 +1,13 @@
 /**
  * Build AIRequest objects from workspace claim/chat/evidence state.
+ * Keeps context scoped to the selected claim and recent turns only.
  */
 
+import { getCachedEvidenceContext } from "@/lib/ai/evidenceContextCache";
 import type {
   AIRequest,
   ConversationTurn,
   PromptContext,
-  SupportingDocumentContext,
 } from "@/lib/ai/types";
 import type {
   ChatMessage,
@@ -14,52 +15,48 @@ import type {
   EvidenceItem,
 } from "@/types/workspace";
 
+/** Latest turns only — older accepted/rejected refinements are omitted. */
+const MAX_CONVERSATION_TURNS = 3;
+
 function toConversationTurns(messages: ChatMessage[]): ConversationTurn[] {
   const turns: ConversationTurn[] = [];
 
   for (const message of messages) {
     if (!message?.role) continue;
     if (message.role === "welcome") continue;
+    // Activity notes are not useful model context.
+    if (message.role === "system") continue;
 
-    const role =
-      message.role === "user"
-        ? "user"
-        : message.role === "system"
-          ? "system"
-          : "assistant";
+    // Drop settled suggestions — only recent live dialogue matters.
+    if (
+      message.suggestion &&
+      (message.suggestion.status === "accepted" ||
+        message.suggestion.status === "rejected")
+    ) {
+      continue;
+    }
 
-    const content = message.suggestion?.summary?.trim()
-      ? message.suggestion.summary
-      : message.content?.trim() ?? "";
+    const role = message.role === "user" ? "user" : "assistant";
+
+    let content = "";
+    if (message.role === "user") {
+      content = message.content?.trim() ?? "";
+    } else if (message.suggestion?.summary?.trim()) {
+      // Compact: summary only, not full reasoning payload.
+      content = message.suggestion.summary.trim();
+    } else {
+      content = message.content?.trim() ?? "";
+    }
 
     if (!content) continue;
+    // Cap turn length to keep prompts small.
+    if (content.length > 400) {
+      content = `${content.slice(0, 397)}...`;
+    }
     turns.push({ role, content });
   }
 
-  return turns.slice(-12);
-}
-
-function toSupportingDocuments(
-  evidence: EvidenceItem[]
-): SupportingDocumentContext[] {
-  return evidence.map((item) => ({
-    documentName: item.documentName,
-    excerpt: item.snippet,
-    sourceType: item.sourceType,
-    citation: item.citation,
-    source: item.source,
-    confidence: item.confidence,
-  }));
-}
-
-function toUploadedDocumentNames(evidence: EvidenceItem[]): string[] {
-  const names: string[] = [];
-  for (const item of evidence) {
-    const name = item.documentName?.trim();
-    if (!name || names.includes(name)) continue;
-    names.push(name);
-  }
-  return names;
+  return turns.slice(-MAX_CONVERSATION_TURNS);
 }
 
 export function buildPromptContext(params: {
@@ -69,6 +66,7 @@ export function buildPromptContext(params: {
   analystInstruction: string;
 }): PromptContext {
   const { claimElement, evidence, messages, analystInstruction } = params;
+  const cached = getCachedEvidenceContext(claimElement.id, evidence);
 
   return {
     claimElementId: claimElement.id,
@@ -77,8 +75,8 @@ export function buildPromptContext(params: {
     currentReasoning: claimElement.reasoning,
     currentEvidenceSource: claimElement.evidenceSource,
     claimStatus: claimElement.status,
-    supportingDocuments: toSupportingDocuments(evidence),
-    uploadedDocumentNames: toUploadedDocumentNames(evidence),
+    supportingDocuments: cached.supportingDocuments,
+    uploadedDocumentNames: cached.uploadedDocumentNames,
     conversationHistory: toConversationTurns(messages),
     analystInstruction,
   };

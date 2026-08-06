@@ -25,7 +25,19 @@ Each phase below is sized so it can be implemented independently in Cursor.
 
 ✅ **Phase 3 — Integrated AI Workspace** (Completed)
 
-The current prototype already includes a functional implementation of several capabilities originally planned across the Claim Chart Viewer, Conversational AI Chat, AI Refinement Suggestions, and Human Review phases. These capabilities currently operate using structured mock data and simulated AI responses. The remaining phases focus on replacing the mock implementation with production-ready AI services, export functionality, and final production readiness.
+✅ **Phase 4 — Live AI Integration** (Completed)
+
+✅ **Phase 5 — Edge Case Handling / Reliability** (Completed)
+
+✅ **Phase 6 — Export to Word** (Completed)
+
+✅ **Phase 7 — Final UI Polish & Production Readiness** (Completed)
+
+✅ **Phase 8 — Demo Readiness / Final QA & Documentation** (Completed)
+
+✅ **Phase 9 — AI Performance Optimization** (Completed)
+
+All planned MVP phases are complete. The prototype supports setup → workspace refinement (live Gemini or mock) → Accept / Reject / Refine → DOCX export, with documentation for reviewers and demos.
 
 ---
 
@@ -329,36 +341,41 @@ Demonstrate trust and control when the AI is wrong, uncertain, or when the analy
 
 ---
 
-## Phase 6 — Export to Word
+## Phase 6 — Export to Word ✅
 
 ### Goal
 
-Produce a Microsoft Word claim chart that reflects only accepted refinements.
+Produce a Microsoft Word claim chart that reflects the **current** workspace state after Accept / Reject / Refine.
 
 ### Focus
 
-- Generate `.docx` from the current accepted claim chart state
-- Export accepted refinements only
-- Preserve a clean table-oriented layout suitable for demo
-- Download experience from workspace header/actions
+- Generate `.docx` via the official `docx` package
+- Export live chart + suggestion state (accepted / pending / rejected / needs review)
+- Header **Export DOCX** beside New Session (no layout redesign)
+- Friendly error on failure — does not touch AI state
 
 ### Features
 
 - Export current claim chart state to `.docx`
-- Include claim elements, mapped features, evidence, and reasoning
-- Preserve a clean, readable table-oriented layout suitable for demo
-- Filename based on session title + date
-- Export available from workspace header/actions
+- Per claim: ID, original claim text, review status, reasoning, confidence, evidence, latest accepted refinement only
+- Summary: totals by status + average confidence
+- Filename: `ClaimChart_US123456.docx`
+- Immediate browser download
 
 ### Deliverables
 
-- Word generation utility (e.g., `docx` library or equivalent)
-- Export button and download flow
-- Exported file matches the on-screen accepted content
+- `lib/export/*` snapshot builder + DOCX generator + download helper
+- `WorkspaceExportContext` registers live workspace state
+- Header Export DOCX button
+- `scripts/test-docx-export.ts` validation for Accept / Reject / Pending
+
+### Status
+
+**Complete** — export-only; AI prompts, Gemini, Accept/Reject/Refine, and panel layout unchanged.
 
 ---
 
-## Phase 7 — Final UI Polish & Production Readiness
+## Phase 7 — Final UI Polish & Production Readiness ✅
 
 ### Goal
 
@@ -377,10 +394,10 @@ Make the prototype feel coherent, reliable, and demoable: clear hierarchy, reada
 
 - Consistent spacing, typography, and color variables
 - Clear visual hierarchy: selected element, pending suggestion, accepted update
-- Loading skeletons or spinners for AI waits
+- Loading indicators for AI waits, export, and suggestion actions
 - Responsive enough for laptop demo (desktop-first is fine)
-- Accessible basics: focus states, button labels, contrast
-- Micro-interactions for selection, accept/reject, and suggestion appearance (2–3 intentional motions max)
+- Accessible basics: focus states, button labels, contrast, skip link
+- Micro-interactions for selection, accept/reject, and suggestion appearance
 
 ### Deliverables
 
@@ -389,45 +406,68 @@ Make the prototype feel coherent, reliable, and demoable: clear hierarchy, reada
 - No placeholder “Lorem” content in primary demo path
 - Clean build with no blocking lint/type errors
 
+### Status
+
+**Complete** — UX/accessibility polish only; AI, export generation, and Accept/Reject/Refine business logic unchanged.
+
 ---
 
-## Phase 8 — Demo Readiness
+## Phase 8 — Demo Readiness / Final QA & Documentation ✅
 
 ### Goal
 
-Prepare a reliable end-to-end demonstration of the refinement workflow for the Lumenci Product Manager assignment.
+Prepare a reliable end-to-end demonstration of the refinement workflow for the Lumenci Product Manager assignment, with complete documentation and verification.
 
 ### Focus
 
-- Seeded demo data
+- Seeded demo data (existing mock matter)
 - Demo checklist / scripted walkthrough
 - README updates (“How to run the demo”)
-- Screenshots for submission or walkthrough support
+- Architecture documentation
 - Known limitations listed briefly
-- Stable end-to-end walkthrough covering happy path + at least one edge case
+- Build / lint / script verification
+- GitHub readiness (`.gitignore`, no secrets, LICENSE)
 
 ### Features
 
 - Seeded sample claim chart + supporting document(s)
-- Scripted demo path covering:
-  1. Setup / upload (or load sample)
-  2. Select a weak claim element
-  3. Ask AI to improve evidence/reasoning
-  4. Review suggestion (before/after + citation)
-  5. Refine once via chat
-  6. Accept final suggestion
-  7. Trigger one edge case (wrong evidence or no evidence)
-  8. Undo an accepted change
-  9. Export to Word
+- Scripted demo path covering setup → refine → accept → export
 - Error handling for missing API key / failed AI calls with user-visible messages
-- Short demo script or checklist in `/docs` (optional companion note)
+- Demo & QA checklist in `/docs/08_DemoChecklist.md`
+- Architecture overview in `/docs/07_Architecture.md`
 
 ### Deliverables
 
-- Stable happy-path demo with sample data
-- Edge-case demo moments that show human control
-- README section: “How to run the demo”
-- Known limitations listed briefly (parsing constraints, single-session state, etc.)
+- Professional root README
+- Architecture + demo documentation
+- MIT LICENSE
+- Implementation plan marked complete (Phases 1–8)
+- Verified `npm` scripts (install, lint, build, test:docx, test:gemini when keyed)
+
+### Status
+
+**Complete** — documentation and verification only; no AI, export, or workflow logic changes.
+
+---
+
+## Phase 9 — AI Performance Optimization ✅
+
+### Goal
+
+Reduce Gemini latency and perceived wait time without changing product behavior.
+
+### Changes
+
+- Lean prompts (selected claim + claim evidence + last 2–3 turns only)
+- Drop full schema dump from prompt body (`responseSchema` remains)
+- `maxOutputTokens: 1024`, 20s timeout, one provider retry
+- Gemini `generateContentStream` + NDJSON API streaming
+- Evidence context cache per claim
+- Dev timing logs (prompt / Gemini / parse / total)
+
+### Status
+
+**Complete** — Accept/Reject/Refine, UI, and mock fallback unchanged.
 
 ---
 
@@ -440,9 +480,9 @@ Prepare a reliable end-to-end demonstration of the refinement workflow for the L
 | 3 | Integrated AI Workspace ✅ | Mock-complete review loop (chart + chat + suggestions + accept/reject/refine) |
 | 4 | Live AI Integration ✅ | Replace mock responses with Gemini + structured outputs |
 | 5 | Edge Case Handling ✅ | Trust, reliability, and uncertainty |
-| 6 | Export to Word | Final output |
-| 7 | Final UI Polish & Production Readiness | Presentation quality and build health |
-| 8 | Demo Readiness | Assignment delivery |
+| 6 | Export to Word | ✅ Complete |
+| 7 | Final UI Polish & Production Readiness | ✅ Complete |
+| 8 | Demo Readiness | ✅ Complete |
 
 Phases 1–3 establish the product shell and mock human-in-the-loop workflow. Phase 4 is the product core for live AI. Later phases make the story complete, credible, and demo-ready.
 
@@ -480,7 +520,10 @@ Keep architecture intentionally simple:
 The MVP is done when:
 
 - A reviewer can run the app locally with sample data
-- The full refinement loop works for at least one claim element
-- Edge cases for wrong evidence, undo, and no-evidence are demonstrable
-- Export produces a Word document reflecting accepted edits
+- The end-to-end refinement loop works (ask → suggest → accept/reject/refine)
+- At least one edge case is demonstrable (reject, mock fallback, or empty evidence messaging)
+- Export produces a Word document reflecting current reviewed edits
 - The experience clearly shows AI as assistant and analyst as decision-maker
+- README + architecture + demo checklist support assignment submission
+
+**Status:** Met as of Phase 8.

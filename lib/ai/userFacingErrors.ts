@@ -24,11 +24,11 @@ const MESSAGES: Record<WorkspaceFailureKind, string> = {
   invalid_json:
     "The AI returned an unexpected response format. Your conversation is unchanged — please retry.",
   missing_api_key:
-    "Live AI is not configured (missing API key). Using available fallback when possible, or retry after configuration.",
+    "Live AI is unavailable (API key not configured). Your conversation is unchanged — check configuration or continue in mock mode.",
   empty_response:
     "The AI returned an empty response. Your conversation is unchanged — please retry.",
   provider:
-    "The AI provider could not complete this request. Your conversation is unchanged — please retry.",
+    "The AI service is temporarily unavailable. Your conversation is unchanged — please retry in a moment.",
   parse:
     "The AI response could not be validated. Your conversation is unchanged — please retry.",
   empty_prompt:

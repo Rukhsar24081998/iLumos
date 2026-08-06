@@ -7,13 +7,16 @@
     "build": "next build --turbopack",
     "start": "next start",
     "lint": "eslint",
-    "test:gemini": "tsx --tsconfig tsconfig.json scripts/test-gemini-suggestion.ts"
+    "test:gemini": "tsx --tsconfig tsconfig.json scripts/test-gemini-suggestion.ts",
+    "test:docx": "tsx --tsconfig tsconfig.json scripts/test-docx-export.ts",
+    "measure:ai-prompt": "tsx --tsconfig tsconfig.json scripts/measure-ai-prompt.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
     "@google/generative-ai": "^0.24.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "docx": "^9.7.1",
     "dotenv": "^16.6.1",
     "lucide-react": "^1.28.0",
     "next": "15.5.22",

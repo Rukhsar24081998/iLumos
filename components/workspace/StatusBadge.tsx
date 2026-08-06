@@ -23,8 +23,9 @@ export function StatusBadge({ element, className }: StatusBadgeProps) {
   return (
     <Badge
       variant="outline"
+      aria-label={`Review status: ${label}`}
       className={cn(
-        "text-[10px] font-medium transition-colors duration-300",
+        "text-[10px] font-medium transition-colors duration-200",
         tone === "amber" && "border-amber-200 bg-amber-50 text-amber-800",
         tone === "rose" && "border-rose-200 bg-rose-50 text-rose-800",
         tone === "orange" && "border-orange-200 bg-orange-50 text-orange-800",
