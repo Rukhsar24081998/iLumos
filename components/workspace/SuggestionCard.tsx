@@ -135,6 +135,7 @@ export function SuggestionCard({
 
   return (
     <article
+      data-screenshot="suggestion"
       aria-label={title}
       className={cn(
         "w-full max-w-full min-w-0 overflow-hidden rounded-xl border bg-card shadow-sm transition-colors duration-200",

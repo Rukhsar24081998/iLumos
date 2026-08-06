@@ -228,6 +228,7 @@ export function ChatPanel({
 
   return (
     <section
+      data-screenshot="ai-analysis"
       className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm"
       aria-label="AI Analysis"
       aria-busy={isBusy}

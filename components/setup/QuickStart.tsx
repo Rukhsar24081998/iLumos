@@ -29,7 +29,10 @@ export function QuickStart({
   documentsLoaded,
 }: QuickStartProps) {
   return (
-    <Card className="border-border/80 bg-gradient-to-b from-muted/40 to-card shadow-sm">
+    <Card
+      data-screenshot="quick-start"
+      className="border-border/80 bg-gradient-to-b from-muted/40 to-card shadow-sm"
+    >
       <CardHeader className="pb-4">
         <div className="flex items-start gap-3">
           <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg border border-orange-200 bg-orange-50 text-orange-500 shadow-sm">

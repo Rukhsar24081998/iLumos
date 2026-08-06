@@ -9,7 +9,8 @@
     "lint": "eslint",
     "test:gemini": "tsx --tsconfig tsconfig.json scripts/test-gemini-suggestion.ts",
     "test:docx": "tsx --tsconfig tsconfig.json scripts/test-docx-export.ts",
-    "measure:ai-prompt": "tsx --tsconfig tsconfig.json scripts/measure-ai-prompt.ts"
+    "measure:ai-prompt": "tsx --tsconfig tsconfig.json scripts/measure-ai-prompt.ts",
+    "screenshots": "tsx --tsconfig tsconfig.json scripts/capture-screenshots.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
@@ -32,8 +33,11 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/sharp": "^0.31.1",
     "eslint": "^9",
     "eslint-config-next": "15.5.22",
+    "playwright": "^1.62.1",
+    "sharp": "^0.35.3",
     "tailwindcss": "^4",
     "tsx": "^4.23.9",
     "typescript": "^5"

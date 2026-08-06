@@ -35,8 +35,10 @@ export function Header() {
   };
 
   return (
-    <header className="sticky top-0 z-10 border-b border-border/80 bg-background/90 backdrop-blur-md">
-      <div
+    <header
+      data-screenshot="app-header"
+      className="sticky top-0 z-10 border-b border-border/80 bg-background/90 backdrop-blur-md"
+    >      <div
         className={cn(
           "mx-auto flex h-16 items-center justify-between gap-3 px-4 sm:px-6",
           isWorkspace ? "max-w-[1600px]" : "max-w-5xl"
@@ -68,7 +70,10 @@ export function Header() {
 
         {isWorkspace ? (
           <div className="flex min-w-0 flex-col items-end gap-1">
-            <div className="flex flex-wrap items-center justify-end gap-2">
+            <div
+              data-screenshot="export-controls"
+              className="flex flex-wrap items-center justify-end gap-2"
+            >
               <button
                 type="button"
                 disabled={isExporting}

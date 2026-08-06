@@ -231,6 +231,7 @@ npm start
 | `npm run test:gemini` | Smoke-test Gemini suggestion generation (needs key) |
 | `npm run test:docx` | Validate DOCX export snapshot + ZIP signature |
 | `npm run measure:ai-prompt` | Compare lean vs legacy prompt size |
+| `npm run screenshots` | Regenerate polished README screenshots via Playwright |
 
 ---
 
@@ -254,19 +255,19 @@ Follow this sequence for a hiring-manager or reviewer demo. Full checklist: [`do
 ## 📸 Screenshots
 
 ### Setup / Quick Start
-![Setup](docs/screenshots/01-setup.png)
+![Setup](docs/images/01-setup.png)
 
 ### AI Workspace
-![Workspace](docs/screenshots/02-workspace.png)
+![Workspace](docs/images/02-workspace.png)
 
 ### AI Suggestion
-![Suggestion](docs/screenshots/03-suggestion.png)
+![Suggestion](docs/images/03-suggestion.png)
 
 ### Accepted Refinement
-![Accepted](docs/screenshots/04-accepted.png)
+![Accepted](docs/images/04-accepted.png)
 
 ### Export DOCX
-![Export](docs/screenshots/05-export.png)
+![Export](docs/images/05-export.png)
 
 ---
 

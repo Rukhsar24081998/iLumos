@@ -585,7 +585,10 @@ export function WorkspaceApp() {
   );
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto md:h-full md:overflow-hidden">
+    <div
+      data-screenshot="workspace"
+      className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto md:h-full md:overflow-hidden"
+    >
       <div className="shrink-0 rounded-xl border border-border/80 bg-card px-3 py-2 shadow-sm sm:px-4 sm:py-2">
         <div className="min-w-0">
           <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">

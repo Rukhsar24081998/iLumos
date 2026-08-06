@@ -8,7 +8,10 @@ import { WorkflowPreview } from "@/components/setup/WorkflowPreview";
  */
 export default function SetupPage() {
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-12 py-6 sm:gap-14 sm:py-10">
+    <div
+      data-screenshot="setup"
+      className="mx-auto flex w-full max-w-5xl flex-col gap-12 py-6 sm:gap-14 sm:py-10"
+    >
       <SetupHero />
       <WorkflowPreview />
       <SetupForm />

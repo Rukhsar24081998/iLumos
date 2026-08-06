@@ -27,6 +27,7 @@ export function AppShell({ children }: AppShellProps) {
         Skip to main content
       </a>
       <div
+        data-screenshot="app-shell"
         className={cn(
           "flex flex-col bg-background",
           isWorkspace

@@ -26,6 +26,7 @@ export function ClaimChartPanel({
 
   return (
     <section
+      data-screenshot="claim-chart"
       className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm"
       aria-label="Claim Chart"
     >
