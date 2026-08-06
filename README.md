@@ -255,17 +255,18 @@ Follow this sequence for a hiring-manager or reviewer demo. Full checklist: [`do
 
 ---
 
-## Screenshots
+<!-- TODO: Replace this table with embedded screenshots after Vercel deployment -->
+## 📸 Screenshots
 
 | Screenshot | Filename | Description |
 |------------|----------|-------------|
-| Setup / Quick Start | 01-setup.png | Setup screen with Quick Start loaded |
-| AI Workspace | 02-workspace.png | Three-panel workspace showing Claim Chart, AI Analysis, and Supporting Evidence |
-| AI Suggestion | 03-suggestion.png | Pending AI refinement suggestion with confidence and citations |
-| Accepted Refinement | 04-accepted.png | Accepted suggestion reflected in the claim chart |
-| Export DOCX | 05-export.png | Exported Microsoft Word claim chart |
+| Setup / Quick Start | `01-setup.png` | Setup screen with Quick Start loaded |
+| AI Workspace | `02-workspace.png` | Three-panel workspace showing Claim Chart, AI Analysis, and Supporting Evidence |
+| AI Suggestion | `03-suggestion.png` | Pending AI refinement suggestion with confidence and citations |
+| Accepted Refinement | `04-accepted.png` | Accepted suggestion reflected in the claim chart |
+| Export DOCX | `05-export.png` | Exported Microsoft Word claim chart |
 
-> Screenshots will be added after deployment. Save the images under `docs/screenshots/` using the filenames above and GitHub will automatically display them once they exist.
+> **Screenshots will be added after the Vercel deployment.** Save the images under `docs/screenshots/` using the filenames above. Once the images are committed, GitHub will automatically render them in this README.
 
 ---
 
