@@ -109,9 +109,7 @@ function getModelName(): string {
   const configured = process.env.GEMINI_MODEL?.trim() || DEFAULT_MODEL;
   const replacement = RETIRED_MODELS[configured];
   if (replacement) {
-    console.error(
-      `[iLumos:ai] Model "${configured}" is retired; using "${replacement}" instead.`
-    );
+    aiWarn(`Model "${configured}" is retired; using "${replacement}" instead.`);
     return replacement;
   }
   return configured;
@@ -171,11 +169,6 @@ function isTimeoutOrAbortError(error: unknown): boolean {
 function logOriginalProviderError(error: unknown, phase: string): void {
   aiWarn(`Original Gemini provider exception (${phase})`, {
     providerError: describeProviderError(error),
-  });
-  // Always print once in scripts/tests so NETWORK wrappers are diagnosable.
-  console.error("[iLumos:ai] Original Gemini provider exception:", {
-    phase,
-    ...describeProviderError(error),
   });
 }
 
@@ -312,20 +305,17 @@ async function withRequestTimeout<T>(
     throw error;
   } finally {
     if (timer !== undefined) clearTimeout(timer);
-    console.error(
-      `[iLumos:ai] ${label} settled in ${Date.now() - startedAt}ms`
-    );
+    aiDebug(`${label} settled`, { ms: Date.now() - startedAt });
   }
 }
 
 async function callGeminiOnce(prompt: string): Promise<string> {
   const hasKey = Boolean(process.env.GEMINI_API_KEY?.trim());
   aiDebug("GEMINI_API_KEY loaded", { present: hasKey });
-  console.error("[iLumos:ai] GEMINI_API_KEY loaded:", hasKey);
 
   const apiKey = getApiKey();
   const modelName = getModelName();
-  console.error("[iLumos:ai] Creating GenerativeModel", {
+  aiDebug("Creating GenerativeModel", {
     model: modelName,
     timeoutMs: REQUEST_TIMEOUT_MS,
     responseMimeType: "application/json",
@@ -351,11 +341,10 @@ async function callGeminiOnce(prompt: string): Promise<string> {
     promptChars: requestBody.length,
     timeoutMs: REQUEST_TIMEOUT_MS,
   });
-  console.error("[iLumos:ai] Calling Gemini with model:", modelName);
-  console.error(
-    "[iLumos:ai] await generateContent() starting (non-stream, timeoutMs=%s)",
-    REQUEST_TIMEOUT_MS
-  );
+  aiDebug("await generateContent() starting", {
+    model: modelName,
+    timeoutMs: REQUEST_TIMEOUT_MS,
+  });
 
   let result;
   try {
@@ -365,14 +354,12 @@ async function callGeminiOnce(prompt: string): Promise<string> {
       "generateContent",
       model.generateContent(requestBody, { timeout: REQUEST_TIMEOUT_MS })
     );
-    console.error("[iLumos:ai] await generateContent() resolved");
+    aiDebug("await generateContent() resolved");
   } catch (error) {
-    console.error("[iLumos:ai] await generateContent() rejected");
     logOriginalProviderError(error, "generateContent");
     throw mapProviderError(error);
   }
 
-  console.error("[iLumos:ai] Reading GenerateContentResult.response");
   const response = result.response;
   const promptBlock = response.promptFeedback?.blockReason;
   const finishReason = response.candidates?.[0]?.finishReason;
@@ -388,9 +375,8 @@ async function callGeminiOnce(prompt: string): Promise<string> {
     );
   }
 
-  console.error("[iLumos:ai] Calling response.text()");
   const text = response.text()?.trim();
-  console.error("[iLumos:ai] response.text() done", {
+  aiDebug("response.text() done", {
     chars: text?.length ?? 0,
     finishReason: finishReason ?? null,
   });

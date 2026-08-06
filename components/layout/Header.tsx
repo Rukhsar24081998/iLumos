@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { WORKSPACE_RESET_FLAG } from "@/lib/workspaceReset";
 
 /**
  * Global application header — Phase 2 branding retained.
@@ -12,6 +13,14 @@ import { cn } from "@/lib/utils";
 export function Header() {
   const pathname = usePathname();
   const isWorkspace = pathname.startsWith("/workspace");
+
+  const markWorkspaceReset = () => {
+    try {
+      sessionStorage.setItem(WORKSPACE_RESET_FLAG, "1");
+    } catch {
+      // Ignore storage failures; home → workspace remount still resets.
+    }
+  };
 
   return (
     <header className="sticky top-0 z-10 border-b border-border/80 bg-background/90 backdrop-blur-md">
@@ -41,6 +50,7 @@ export function Header() {
         {isWorkspace ? (
           <Link
             href="/"
+            onClick={markWorkspaceReset}
             className={cn(
               buttonVariants({ variant: "outline", size: "sm" }),
               "border-border bg-background text-foreground hover:border-orange-200 hover:bg-orange-50 hover:text-orange-800"

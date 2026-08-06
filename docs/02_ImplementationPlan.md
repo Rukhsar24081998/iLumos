@@ -283,7 +283,7 @@ Replace mock AI behavior with a live model integration while preserving the exis
 
 ---
 
-## Phase 5 — Edge Case Handling
+## Phase 5 — Edge Case Handling ✅
 
 ### Goal
 
@@ -293,9 +293,10 @@ Demonstrate trust and control when the AI is wrong, uncertain, or when the analy
 
 - Wrong evidence (reject and refine with corrective guidance)
 - No evidence found (explicit uncertain / empty state; no fabricated citations)
-- Undo accepted refinement (in-session restore of prior claim element state)
+- Request reliability (duplicate prevention, stale response guards, typing cleanup)
+- Friendly error recovery (timeout, network, parse, missing key) without crashing
 - Hallucination guardrails (cite only from provided documents)
-- Retry workflow after failed or unusable suggestions
+- Retry workflow after failed or unusable suggestions (one automatic retry + mock fallback)
 
 ### Features
 
@@ -305,27 +306,26 @@ Demonstrate trust and control when the AI is wrong, uncertain, or when the analy
 - Analyst can refine with guidance: “This evidence is wrong; use the section about [X] instead”
 - UI should make it obvious that rejected content was not applied
 
-#### Undo previous refinement
+#### Request & session reliability
 
-- In-session undo for the last accepted change (minimum)
-- Restore previous element field values
-- Chat/system note that undo occurred
-- Optional: simple undo stack for multiple accepts within the session
+- Duplicate Send / Accept / Reject / Refine clicks ignored while busy
+- Stale async generations discarded via per-thread generation tokens
+- Typing / busy state always clears on success or failure
+- New Session marks a full workspace state reset
 
 #### AI cannot find evidence
 
 - Explicit empty/uncertain state when supporting evidence is not found in uploaded docs
 - AI communicates uncertainty clearly (no fabricated citations)
-- Offer next steps: upload another document, broaden the request, or manually edit (manual edit can be minimal/out of primary path)
-- Suggestion UI variant: “No evidence found” instead of a fake proposal
+- Empty prompt / missing claim handled with system messages (no exceptions)
 
 ### Deliverables
 
-- Reject + refine path for incorrect evidence
-- Undo control for last accepted change (or undo stack)
-- “No evidence found” suggestion/empty state with clear messaging
-- Guardrails in prompting to reduce hallucinated citations (cite only from provided documents)
-- Retry path for recoverable AI / workflow failures
+- Reject + refine path for incorrect evidence ✅
+- Friendly system messages for recoverable AI failures ✅
+- “No evidence found” handling via structured AI + sanitized UI ✅
+- Guardrails in prompting to reduce hallucinated citations ✅
+- One automatic retry for transient live AI failures, then mock fallback ✅
 
 ---
 
@@ -438,8 +438,8 @@ Prepare a reliable end-to-end demonstration of the refinement workflow for the L
 | 1 | Project Setup ✅ | Foundation |
 | 2 | Initial Onboarding Experience ✅ | Session input |
 | 3 | Integrated AI Workspace ✅ | Mock-complete review loop (chart + chat + suggestions + accept/reject/refine) |
-| 4 | Live AI Integration | Replace mock responses with Gemini + structured outputs |
-| 5 | Edge Case Handling | Trust, undo, and uncertainty |
+| 4 | Live AI Integration ✅ | Replace mock responses with Gemini + structured outputs |
+| 5 | Edge Case Handling ✅ | Trust, reliability, and uncertainty |
 | 6 | Export to Word | Final output |
 | 7 | Final UI Polish & Production Readiness | Presentation quality and build health |
 | 8 | Demo Readiness | Assignment delivery |

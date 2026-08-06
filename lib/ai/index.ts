@@ -46,5 +46,12 @@ export { buildAIRequest, buildPromptContext } from "@/lib/ai/buildRequest";
 export { resolveAssistantMessage } from "@/lib/ai/workspaceBridge";
 export type {
   ResolveAssistantParams,
+  ResolveAssistantResult,
   WorkspaceAIMode,
 } from "@/lib/ai/workspaceBridge";
+export {
+  classifyWorkspaceError,
+  isRetryableWorkspaceError,
+  userFacingMessage,
+} from "@/lib/ai/userFacingErrors";
+export type { WorkspaceFailureKind } from "@/lib/ai/userFacingErrors";

@@ -13,8 +13,13 @@ import {
   INITIAL_NEEDS_REVIEW_COUNT,
   MATTER,
 } from "@/data/mockWorkspace";
+import {
+  classifyWorkspaceError,
+  userFacingMessage,
+} from "@/lib/ai/userFacingErrors";
 import { resolveAssistantMessage } from "@/lib/ai/workspaceBridge";
 import { formatTimeLabel } from "@/lib/formatTimeLabel";
+import { WORKSPACE_RESET_FLAG } from "@/lib/workspaceReset";
 import type {
   ChatMessage,
   ClaimElement,
@@ -24,8 +29,16 @@ import type {
 const TYPING_DELAY_MS = 1100;
 const EMPTY_MESSAGES: ChatMessage[] = [];
 
+function createInitialMessages(): Record<string, ChatMessage[]> {
+  return {
+    "CE-3": buildWelcomeMessages("CE-3", INITIAL_NEEDS_REVIEW_COUNT),
+    "CE-1": buildWelcomeMessages("CE-1", INITIAL_NEEDS_REVIEW_COUNT),
+    "CE-2": buildWelcomeMessages("CE-2", INITIAL_NEEDS_REVIEW_COUNT),
+  };
+}
+
 /**
- * Phase 3/4 workspace — mock UX with optional live Gemini generation.
+ * Phase 3–5 workspace — live/mock AI with resilient request handling.
  */
 export function WorkspaceApp() {
   const [elements, setElements] = useState<ClaimElement[]>(
@@ -39,18 +52,43 @@ export function WorkspaceApp() {
   const [typingThreadId, setTypingThreadId] = useState<string | null>(null);
   const [messagesByClaim, setMessagesByClaim] = useState<
     Record<string, ChatMessage[]>
-  >(() => ({
-    "CE-3": buildWelcomeMessages("CE-3", INITIAL_NEEDS_REVIEW_COUNT),
-    "CE-1": buildWelcomeMessages("CE-1", INITIAL_NEEDS_REVIEW_COUNT),
-    "CE-2": buildWelcomeMessages("CE-2", INITIAL_NEEDS_REVIEW_COUNT),
-  }));
+  >(createInitialMessages);
+
   const typingThreadRef = useRef<string | null>(null);
   const selectedIdRef = useRef(selectedId);
   const messagesByClaimRef = useRef(messagesByClaim);
   const elementsRef = useRef(elements);
+  /** Sync lock against double-clicks before React re-renders. */
+  const actionLockRef = useRef(false);
+  /** Per-thread generation counters — stale async results are ignored. */
+  const generationByThreadRef = useRef<Record<string, number>>({});
+
   selectedIdRef.current = selectedId;
   messagesByClaimRef.current = messagesByClaim;
   elementsRef.current = elements;
+
+  const resetWorkspace = useCallback(() => {
+    generationByThreadRef.current = {};
+    actionLockRef.current = false;
+    typingThreadRef.current = null;
+    setElements(INITIAL_CLAIM_ELEMENTS);
+    setSelectedId("CE-3");
+    setHighlightedId(null);
+    setActiveSuggestionId(null);
+    setTypingThreadId(null);
+    setMessagesByClaim(createInitialMessages());
+  }, []);
+
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem(WORKSPACE_RESET_FLAG) === "1") {
+        sessionStorage.removeItem(WORKSPACE_RESET_FLAG);
+        resetWorkspace();
+      }
+    } catch {
+      // sessionStorage may be unavailable; initial state is already clean.
+    }
+  }, [resetWorkspace]);
 
   useEffect(() => {
     if (!highlightedId) return;
@@ -58,8 +96,7 @@ export function WorkspaceApp() {
     return () => window.clearTimeout(timer);
   }, [highlightedId]);
 
-  // Keep the sync guard aligned with React state. A desynced ref (e.g. after
-  // Fast Refresh) blocks handleSend while the UI still looks idle.
+  // Keep the sync guard aligned with React state.
   useEffect(() => {
     typingThreadRef.current = typingThreadId;
   }, [typingThreadId]);
@@ -137,8 +174,11 @@ export function WorkspaceApp() {
   }, []);
 
   const beginTyping = useCallback((threadId: string) => {
+    const generation = (generationByThreadRef.current[threadId] ?? 0) + 1;
+    generationByThreadRef.current[threadId] = generation;
     typingThreadRef.current = threadId;
     setTypingThreadId(threadId);
+    return generation;
   }, []);
 
   const clearTyping = useCallback((threadId: string) => {
@@ -146,10 +186,33 @@ export function WorkspaceApp() {
       typingThreadRef.current = null;
       setTypingThreadId(null);
     }
+    actionLockRef.current = false;
   }, []);
 
+  const isCurrentGeneration = useCallback(
+    (threadId: string, generation: number) =>
+      generationByThreadRef.current[threadId] === generation,
+    []
+  );
+
+  const makeSystemMessage = useCallback(
+    (claimElementId: string, content: string): ChatMessage => {
+      const stamp = new Date();
+      return {
+        id: `sys-${stamp.getTime()}-${Math.random().toString(36).slice(2, 7)}`,
+        role: "system",
+        claimElementId,
+        content,
+        createdAt: stamp.toISOString(),
+        timeLabel: formatTimeLabel(stamp),
+      };
+    },
+    []
+  );
+
   const commitAssistant = useCallback(
-    (threadId: string, assistant: ChatMessage) => {
+    (threadId: string, generation: number, assistant: ChatMessage) => {
+      if (!isCurrentGeneration(threadId, generation)) return;
       if (typingThreadRef.current !== threadId) return;
       updateMessages(threadId, (current) => [...current, assistant]);
       if (assistant.suggestion && selectedIdRef.current === threadId) {
@@ -157,36 +220,68 @@ export function WorkspaceApp() {
       }
       clearTyping(threadId);
     },
-    [clearTyping, updateMessages]
+    [clearTyping, isCurrentGeneration, updateMessages]
   );
+
+  const commitFailure = useCallback(
+    (threadId: string, generation: number, error: unknown) => {
+      if (!isCurrentGeneration(threadId, generation)) return;
+      const kind = classifyWorkspaceError(error);
+      updateMessages(threadId, (current) => [
+        ...current,
+        makeSystemMessage(threadId, userFacingMessage(kind)),
+      ]);
+      clearTyping(threadId);
+    },
+    [clearTyping, isCurrentGeneration, makeSystemMessage, updateMessages]
+  );
+
+  const recoverIdleGuard = useCallback(() => {
+    if (typingThreadId === null && typingThreadRef.current !== null) {
+      typingThreadRef.current = null;
+    }
+  }, [typingThreadId]);
 
   const handleSend = useCallback(
     (prompt: string) => {
-      // State is the source of truth for the idle UI. If the ref is still set
-      // while state is idle, recover so chips/Send are not silently swallowed.
-      if (typingThreadId === null && typingThreadRef.current !== null) {
-        typingThreadRef.current = null;
-      }
+      recoverIdleGuard();
+      if (actionLockRef.current) return;
       if (typingThreadId !== null || typingThreadRef.current) return;
 
+      const trimmed = prompt.trim();
       const threadId = selectedId;
+
+      if (!trimmed) {
+        updateMessages(threadId, (current) => [
+          ...current,
+          makeSystemMessage(threadId, userFacingMessage("empty_prompt")),
+        ]);
+        return;
+      }
+
+      actionLockRef.current = true;
       const stamp = new Date();
       const userMessage: ChatMessage = {
-        id: `msg-u-${stamp.getTime()}`,
+        id: `msg-u-${stamp.getTime()}-${Math.random().toString(36).slice(2, 7)}`,
         role: "user",
         claimElementId: threadId,
-        content: prompt,
+        content: trimmed,
         createdAt: stamp.toISOString(),
         timeLabel: formatTimeLabel(stamp),
       };
 
+      const generation = beginTyping(threadId);
+      actionLockRef.current = false;
       updateMessages(threadId, (current) => [...current, userMessage]);
-      beginTyping(threadId);
 
       const claimElement =
         elementsRef.current.find((element) => element.id === threadId) ??
         elementsRef.current[0];
       if (!claimElement) {
+        updateMessages(threadId, (current) => [
+          ...current,
+          makeSystemMessage(threadId, userFacingMessage("missing_claim")),
+        ]);
         clearTyping(threadId);
         return;
       }
@@ -202,7 +297,7 @@ export function WorkspaceApp() {
       void (async () => {
         try {
           const { message } = await resolveAssistantMessage({
-            prompt,
+            prompt: trimmed,
             threadId,
             claimElement,
             evidence: evidenceForClaim,
@@ -210,9 +305,9 @@ export function WorkspaceApp() {
             version: 1,
             minDelayMs: TYPING_DELAY_MS,
           });
-          commitAssistant(threadId, message);
-        } catch {
-          clearTyping(threadId);
+          commitAssistant(threadId, generation, message);
+        } catch (error) {
+          commitFailure(threadId, generation, error);
         }
       })();
     },
@@ -220,6 +315,9 @@ export function WorkspaceApp() {
       beginTyping,
       clearTyping,
       commitAssistant,
+      commitFailure,
+      makeSystemMessage,
+      recoverIdleGuard,
       selectedId,
       typingThreadId,
       updateMessages,
@@ -245,26 +343,10 @@ export function WorkspaceApp() {
     []
   );
 
-  const makeSystemMessage = useCallback(
-    (claimElementId: string, content: string): ChatMessage => {
-      const stamp = new Date();
-      return {
-        id: `sys-${stamp.getTime()}`,
-        role: "system",
-        claimElementId,
-        content,
-        createdAt: stamp.toISOString(),
-        timeLabel: formatTimeLabel(stamp),
-      };
-    },
-    []
-  );
-
   const handleAccept = useCallback(
     (suggestion: SuggestionPayload) => {
-      if (typingThreadId === null && typingThreadRef.current !== null) {
-        typingThreadRef.current = null;
-      }
+      recoverIdleGuard();
+      if (actionLockRef.current) return;
       if (
         suggestion.status !== "pending" ||
         typingThreadId !== null ||
@@ -273,28 +355,54 @@ export function WorkspaceApp() {
         return;
       }
 
-      patchSuggestionStatus(suggestion.id, "accepted");
-      setActiveSuggestionId(suggestion.id);
+      actionLockRef.current = true;
+      try {
+        patchSuggestionStatus(suggestion.id, "accepted");
+        setActiveSuggestionId(suggestion.id);
 
-      if (suggestion.isNewRowProposal) {
-        const targetId = suggestion.claimElementId;
-        setElements((current) => {
-          const existing = current.find((element) => element.id === targetId);
-          const nextElement = claimElementFromSuggestion(suggestion, existing);
-          if (existing) {
-            return current.map((element) =>
-              element.id === targetId ? nextElement : element
-            );
-          }
-          return [...current, nextElement];
-        });
-        setHighlightedId(targetId);
-        setMessagesByClaim((current) => ({
-          ...current,
-          [targetId]:
-            current[targetId] ??
-            buildWelcomeMessages(targetId, INITIAL_NEEDS_REVIEW_COUNT),
-        }));
+        if (suggestion.isNewRowProposal) {
+          const targetId = suggestion.claimElementId;
+          setElements((current) => {
+            const existing = current.find((element) => element.id === targetId);
+            const nextElement = claimElementFromSuggestion(suggestion, existing);
+            if (existing) {
+              return current.map((element) =>
+                element.id === targetId ? nextElement : element
+              );
+            }
+            return [...current, nextElement];
+          });
+          setHighlightedId(targetId);
+          setMessagesByClaim((current) => ({
+            ...current,
+            [targetId]:
+              current[targetId] ??
+              buildWelcomeMessages(targetId, INITIAL_NEEDS_REVIEW_COUNT),
+          }));
+          updateMessages(selectedId, (current) => [
+            ...current,
+            makeSystemMessage(
+              selectedId,
+              "Suggestion accepted. Claim chart updated."
+            ),
+          ]);
+          return;
+        }
+
+        setElements((current) =>
+          current.map((element) =>
+            element.id === suggestion.claimElementId
+              ? {
+                  ...element,
+                  reasoning: suggestion.suggestedReasoning,
+                  status: "accepted",
+                  evidenceSource: suggestion.citation,
+                }
+              : element
+          )
+        );
+        setHighlightedId(suggestion.claimElementId);
+
         updateMessages(selectedId, (current) => [
           ...current,
           makeSystemMessage(
@@ -302,34 +410,14 @@ export function WorkspaceApp() {
             "Suggestion accepted. Claim chart updated."
           ),
         ]);
-        return;
+      } finally {
+        actionLockRef.current = false;
       }
-
-      setElements((current) =>
-        current.map((element) =>
-          element.id === suggestion.claimElementId
-            ? {
-                ...element,
-                reasoning: suggestion.suggestedReasoning,
-                status: "accepted",
-                evidenceSource: suggestion.citation,
-              }
-            : element
-        )
-      );
-      setHighlightedId(suggestion.claimElementId);
-
-      updateMessages(selectedId, (current) => [
-        ...current,
-        makeSystemMessage(
-          selectedId,
-          "Suggestion accepted. Claim chart updated."
-        ),
-      ]);
     },
     [
       makeSystemMessage,
       patchSuggestionStatus,
+      recoverIdleGuard,
       selectedId,
       typingThreadId,
       updateMessages,
@@ -338,9 +426,8 @@ export function WorkspaceApp() {
 
   const handleReject = useCallback(
     (suggestion: SuggestionPayload) => {
-      if (typingThreadId === null && typingThreadRef.current !== null) {
-        typingThreadRef.current = null;
-      }
+      recoverIdleGuard();
+      if (actionLockRef.current) return;
       if (
         suggestion.status !== "pending" ||
         typingThreadId !== null ||
@@ -349,19 +436,25 @@ export function WorkspaceApp() {
         return;
       }
 
-      patchSuggestionStatus(suggestion.id, "rejected");
-      setActiveSuggestionId(suggestion.id);
-      updateMessages(selectedId, (current) => [
-        ...current,
-        makeSystemMessage(
-          selectedId,
-          "Suggestion rejected. Claim chart unchanged."
-        ),
-      ]);
+      actionLockRef.current = true;
+      try {
+        patchSuggestionStatus(suggestion.id, "rejected");
+        setActiveSuggestionId(suggestion.id);
+        updateMessages(selectedId, (current) => [
+          ...current,
+          makeSystemMessage(
+            selectedId,
+            "Suggestion rejected. Claim chart unchanged."
+          ),
+        ]);
+      } finally {
+        actionLockRef.current = false;
+      }
     },
     [
       makeSystemMessage,
       patchSuggestionStatus,
+      recoverIdleGuard,
       selectedId,
       typingThreadId,
       updateMessages,
@@ -370,9 +463,8 @@ export function WorkspaceApp() {
 
   const handleRefine = useCallback(
     (suggestion: SuggestionPayload) => {
-      if (typingThreadId === null && typingThreadRef.current !== null) {
-        typingThreadRef.current = null;
-      }
+      recoverIdleGuard();
+      if (actionLockRef.current) return;
       if (
         suggestion.status !== "pending" ||
         typingThreadId !== null ||
@@ -381,18 +473,31 @@ export function WorkspaceApp() {
         return;
       }
 
+      actionLockRef.current = true;
       const stamp = new Date();
       const threadId = selectedId;
       const thread = messagesByClaimRef.current[threadId] ?? EMPTY_MESSAGES;
-      let maxVersion = 1;
+
+      // Version from the latest suggestion in this thread (accepted or pending).
+      let maxVersion = suggestion.version ?? 1;
       for (const message of thread) {
         const version = message.suggestion?.version ?? 0;
         if (version > maxVersion) maxVersion = version;
       }
       const nextVersion = maxVersion + 1;
 
+      // Prefer the newest pending suggestion as refine base when ids differ.
+      let baseSuggestion = suggestion;
+      for (let index = thread.length - 1; index >= 0; index -= 1) {
+        const candidate = thread[index]?.suggestion;
+        if (candidate?.status === "pending") {
+          baseSuggestion = candidate;
+          break;
+        }
+      }
+
       const userMessage: ChatMessage = {
-        id: `msg-u-refine-${stamp.getTime()}`,
+        id: `msg-u-refine-${stamp.getTime()}-${Math.random().toString(36).slice(2, 7)}`,
         role: "user",
         claimElementId: threadId,
         content: "Refine Further",
@@ -400,25 +505,30 @@ export function WorkspaceApp() {
         timeLabel: formatTimeLabel(stamp),
       };
 
+      const generation = beginTyping(threadId);
+      actionLockRef.current = false;
       updateMessages(threadId, (current) => [...current, userMessage]);
-      beginTyping(threadId);
-      setHighlightedId(suggestion.claimElementId);
+      setHighlightedId(baseSuggestion.claimElementId);
 
       const claimElement =
         elementsRef.current.find(
-          (element) => element.id === suggestion.claimElementId
+          (element) => element.id === baseSuggestion.claimElementId
         ) ??
         elementsRef.current.find((element) => element.id === threadId) ??
         elementsRef.current[0];
 
       if (!claimElement) {
+        updateMessages(threadId, (current) => [
+          ...current,
+          makeSystemMessage(threadId, userFacingMessage("missing_claim")),
+        ]);
         clearTyping(threadId);
         return;
       }
 
       const evidenceForClaim = EVIDENCE_ITEMS.filter(
         (item) =>
-          item.claimElementId === suggestion.claimElementId ||
+          item.claimElementId === baseSuggestion.claimElementId ||
           item.claimElementId === claimElement.id
       );
 
@@ -433,12 +543,12 @@ export function WorkspaceApp() {
             version: nextVersion,
             intro:
               "Here's a more technically grounded version based on your refinement request.",
-            baseSuggestion: suggestion,
+            baseSuggestion,
             minDelayMs: TYPING_DELAY_MS,
           });
-          commitAssistant(threadId, message);
-        } catch {
-          clearTyping(threadId);
+          commitAssistant(threadId, generation, message);
+        } catch (error) {
+          commitFailure(threadId, generation, error);
         }
       })();
     },
@@ -446,6 +556,9 @@ export function WorkspaceApp() {
       beginTyping,
       clearTyping,
       commitAssistant,
+      commitFailure,
+      makeSystemMessage,
+      recoverIdleGuard,
       selectedId,
       typingThreadId,
       updateMessages,
