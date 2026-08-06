@@ -32,6 +32,7 @@ cp .env.example .env.local
 | --- | --- |
 | `GEMINI_API_KEY` | Gemini API key (Phase 4.2+; server/script only) |
 | `GEMINI_MODEL` | Optional model id (default: `gemini-2.0-flash`) |
+| `NEXT_PUBLIC_AI_MODE` | `auto` (default), `mock`, or `live` — workspace generation mode |
 | `AI_DEBUG` | Optional `true` to force AI debug logs |
 
 Local Gemini client smoke test (not wired to the UI):
@@ -40,6 +41,7 @@ Local Gemini client smoke test (not wired to the UI):
 npm run test:gemini
 ```
 
+Workspace chat uses Gemini when configured (`NEXT_PUBLIC_AI_MODE=auto` or `live`) and automatically falls back to mock suggestions if the key is missing or the request fails. Set `NEXT_PUBLIC_AI_MODE=mock` for a guaranteed demo path without Gemini.
 ## Project structure
 
 ```

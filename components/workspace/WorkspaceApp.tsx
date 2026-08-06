@@ -8,14 +8,12 @@ import { EvidencePanel } from "@/components/workspace/EvidencePanel";
 import {
   buildWelcomeMessages,
   claimElementFromSuggestion,
-  createAssistantMessage,
   EVIDENCE_ITEMS,
   INITIAL_CLAIM_ELEMENTS,
   INITIAL_NEEDS_REVIEW_COUNT,
   MATTER,
-  resolveScenarioFromPrompt,
-  SCENARIO_SUGGESTIONS,
 } from "@/data/mockWorkspace";
+import { resolveAssistantMessage } from "@/lib/ai/workspaceBridge";
 import { formatTimeLabel } from "@/lib/formatTimeLabel";
 import type {
   ChatMessage,
@@ -27,7 +25,7 @@ const TYPING_DELAY_MS = 1100;
 const EMPTY_MESSAGES: ChatMessage[] = [];
 
 /**
- * Phase 3 workspace — interactive UI with mock data only.
+ * Phase 3/4 workspace — mock UX with optional live Gemini generation.
  */
 export function WorkspaceApp() {
   const [elements, setElements] = useState<ClaimElement[]>(
@@ -46,24 +44,19 @@ export function WorkspaceApp() {
     "CE-1": buildWelcomeMessages("CE-1", INITIAL_NEEDS_REVIEW_COUNT),
     "CE-2": buildWelcomeMessages("CE-2", INITIAL_NEEDS_REVIEW_COUNT),
   }));
-  const typingTimerRef = useRef<number | null>(null);
   const typingThreadRef = useRef<string | null>(null);
   const selectedIdRef = useRef(selectedId);
+  const messagesByClaimRef = useRef(messagesByClaim);
+  const elementsRef = useRef(elements);
   selectedIdRef.current = selectedId;
+  messagesByClaimRef.current = messagesByClaim;
+  elementsRef.current = elements;
 
   useEffect(() => {
     if (!highlightedId) return;
     const timer = window.setTimeout(() => setHighlightedId(null), 1600);
     return () => window.clearTimeout(timer);
   }, [highlightedId]);
-
-  useEffect(() => {
-    return () => {
-      if (typingTimerRef.current) {
-        window.clearTimeout(typingTimerRef.current);
-      }
-    };
-  }, []);
 
   const selectedElement = useMemo(
     () => elements.find((element) => element.id === selectedId),
@@ -137,32 +130,28 @@ export function WorkspaceApp() {
     });
   }, []);
 
-  const appendAssistantAfterDelay = useCallback(
+  const beginTyping = useCallback((threadId: string) => {
+    typingThreadRef.current = threadId;
+    setTypingThreadId(threadId);
+  }, []);
+
+  const clearTyping = useCallback((threadId: string) => {
+    if (typingThreadRef.current === threadId) {
+      typingThreadRef.current = null;
+      setTypingThreadId(null);
+    }
+  }, []);
+
+  const commitAssistant = useCallback(
     (threadId: string, assistant: ChatMessage) => {
-      if (typingTimerRef.current) {
-        window.clearTimeout(typingTimerRef.current);
+      if (typingThreadRef.current !== threadId) return;
+      updateMessages(threadId, (current) => [...current, assistant]);
+      if (assistant.suggestion && selectedIdRef.current === threadId) {
+        setActiveSuggestionId(assistant.suggestion.id);
       }
-      typingThreadRef.current = threadId;
-      setTypingThreadId(threadId);
-      typingTimerRef.current = window.setTimeout(() => {
-        // Drop the reply if this request was cancelled (e.g. superseded).
-        if (typingThreadRef.current !== threadId) {
-          typingTimerRef.current = null;
-          return;
-        }
-        updateMessages(threadId, (current) => [...current, assistant]);
-        if (
-          assistant.suggestion &&
-          selectedIdRef.current === threadId
-        ) {
-          setActiveSuggestionId(assistant.suggestion.id);
-        }
-        typingThreadRef.current = null;
-        setTypingThreadId(null);
-        typingTimerRef.current = null;
-      }, TYPING_DELAY_MS);
+      clearTyping(threadId);
     },
-    [updateMessages]
+    [clearTyping, updateMessages]
   );
 
   const handleSend = useCallback(
@@ -170,7 +159,6 @@ export function WorkspaceApp() {
       if (typingThreadRef.current) return;
 
       const threadId = selectedId;
-      const scenarioKey = resolveScenarioFromPrompt(prompt);
       const stamp = new Date();
       const userMessage: ChatMessage = {
         id: `msg-u-${stamp.getTime()}`,
@@ -182,13 +170,38 @@ export function WorkspaceApp() {
       };
 
       updateMessages(threadId, (current) => [...current, userMessage]);
+      beginTyping(threadId);
 
-      const assistant = createAssistantMessage(scenarioKey, threadId, {
-        version: 1,
-      });
-      appendAssistantAfterDelay(threadId, assistant);
+      const claimElement =
+        elementsRef.current.find((element) => element.id === threadId) ??
+        elementsRef.current[0];
+      if (!claimElement) {
+        clearTyping(threadId);
+        return;
+      }
+
+      const threadMessages = [
+        ...(messagesByClaimRef.current[threadId] ?? EMPTY_MESSAGES),
+        userMessage,
+      ];
+      const evidenceForClaim = EVIDENCE_ITEMS.filter(
+        (item) => item.claimElementId === claimElement.id
+      );
+
+      void (async () => {
+        const { message } = await resolveAssistantMessage({
+          prompt,
+          threadId,
+          claimElement,
+          evidence: evidenceForClaim,
+          messages: threadMessages,
+          version: 1,
+          minDelayMs: TYPING_DELAY_MS,
+        });
+        commitAssistant(threadId, message);
+      })();
     },
-    [appendAssistantAfterDelay, selectedId, updateMessages]
+    [beginTyping, clearTyping, commitAssistant, selectedId, updateMessages]
   );
 
   const patchSuggestionStatus = useCallback(
@@ -309,7 +322,7 @@ export function WorkspaceApp() {
 
       const stamp = new Date();
       const threadId = selectedId;
-      const thread = messagesByClaim[threadId] ?? EMPTY_MESSAGES;
+      const thread = messagesByClaimRef.current[threadId] ?? EMPTY_MESSAGES;
       let maxVersion = 1;
       for (const message of thread) {
         const version = message.suggestion?.version ?? 0;
@@ -317,50 +330,54 @@ export function WorkspaceApp() {
       }
       const nextVersion = maxVersion + 1;
 
-      updateMessages(threadId, (current) => [
-        ...current,
-        {
-          id: `msg-u-refine-${stamp.getTime()}`,
-          role: "user",
-          claimElementId: threadId,
-          content: "Refine Further",
-          createdAt: stamp.toISOString(),
-          timeLabel: formatTimeLabel(stamp),
-        },
-      ]);
+      const userMessage: ChatMessage = {
+        id: `msg-u-refine-${stamp.getTime()}`,
+        role: "user",
+        claimElementId: threadId,
+        content: "Refine Further",
+        createdAt: stamp.toISOString(),
+        timeLabel: formatTimeLabel(stamp),
+      };
 
-      const refinedBase = SCENARIO_SUGGESTIONS.refine_further;
-      const assistant = createAssistantMessage("refine_further", threadId, {
-        version: nextVersion,
-        intro:
-          "Here's a more technically grounded version based on your refinement request.",
-      });
+      updateMessages(threadId, (current) => [...current, userMessage]);
+      beginTyping(threadId);
+      setHighlightedId(suggestion.claimElementId);
 
-      if (assistant.suggestion) {
-        assistant.suggestion = {
-          ...assistant.suggestion,
-          claimElementId: suggestion.claimElementId,
-          originalReasoning: suggestion.suggestedReasoning,
-          isNewRowProposal: suggestion.isNewRowProposal,
-          proposedPatentClaimElement: suggestion.proposedPatentClaimElement,
-          proposedAccusedProductFeature:
-            suggestion.proposedAccusedProductFeature,
-          evidenceSources: refinedBase.evidenceSources,
-          primarySource: refinedBase.primarySource,
-          citation: refinedBase.citation,
-          confidence: Math.min(0.98, (suggestion.confidence ?? 0) + 0.02),
-        };
+      const claimElement =
+        elementsRef.current.find(
+          (element) => element.id === suggestion.claimElementId
+        ) ??
+        elementsRef.current.find((element) => element.id === threadId) ??
+        elementsRef.current[0];
+
+      if (!claimElement) {
+        clearTyping(threadId);
+        return;
       }
 
-      appendAssistantAfterDelay(threadId, assistant);
-      setHighlightedId(suggestion.claimElementId);
+      const evidenceForClaim = EVIDENCE_ITEMS.filter(
+        (item) =>
+          item.claimElementId === suggestion.claimElementId ||
+          item.claimElementId === claimElement.id
+      );
+
+      void (async () => {
+        const { message } = await resolveAssistantMessage({
+          prompt: "Refine Further",
+          threadId,
+          claimElement,
+          evidence: evidenceForClaim,
+          messages: [...thread, userMessage],
+          version: nextVersion,
+          intro:
+            "Here's a more technically grounded version based on your refinement request.",
+          baseSuggestion: suggestion,
+          minDelayMs: TYPING_DELAY_MS,
+        });
+        commitAssistant(threadId, message);
+      })();
     },
-    [
-      appendAssistantAfterDelay,
-      messagesByClaim,
-      selectedId,
-      updateMessages,
-    ]
+    [beginTyping, clearTyping, commitAssistant, selectedId, updateMessages]
   );
 
   return (

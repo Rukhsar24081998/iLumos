@@ -32,3 +32,14 @@ export type {
   SupportingDocumentContext,
 } from "@/lib/ai/types";
 export { EXAMPLE_AI_RESPONSE } from "@/lib/ai/exampleResponse";
+export {
+  mapAIResponseToAssistantMessage,
+  mapAIResponseToSuggestion,
+} from "@/lib/ai/mapper";
+export type { MapSuggestionOptions } from "@/lib/ai/mapper";
+export { buildAIRequest, buildPromptContext } from "@/lib/ai/buildRequest";
+export { resolveAssistantMessage } from "@/lib/ai/workspaceBridge";
+export type {
+  ResolveAssistantParams,
+  WorkspaceAIMode,
+} from "@/lib/ai/workspaceBridge";
