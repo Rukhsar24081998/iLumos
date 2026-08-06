@@ -257,17 +257,15 @@ Follow this sequence for a hiring-manager or reviewer demo. Full checklist: [`do
 
 ## Screenshots
 
-Add PNG/JPEG captures under [`docs/screenshots/`](docs/screenshots/). Filenames below match the placeholders so you can drop images in without editing this README.
+| Screenshot | Filename | Description |
+|------------|----------|-------------|
+| Setup / Quick Start | 01-setup.png | Setup screen with Quick Start loaded |
+| AI Workspace | 02-workspace.png | Three-panel workspace showing Claim Chart, AI Analysis, and Supporting Evidence |
+| AI Suggestion | 03-suggestion.png | Pending AI refinement suggestion with confidence and citations |
+| Accepted Refinement | 04-accepted.png | Accepted suggestion reflected in the claim chart |
+| Export DOCX | 05-export.png | Exported Microsoft Word claim chart |
 
-| Preview | Suggested file | What to capture |
-| --- | --- | --- |
-| ![Setup / Quick Start](docs/screenshots/01-setup.png) | `01-setup.png` | Setup screen with Quick Start loaded |
-| ![Workspace](docs/screenshots/02-workspace.png) | `02-workspace.png` | Three-panel workspace |
-| ![AI suggestion](docs/screenshots/03-suggestion.png) | `03-suggestion.png` | Pending suggestion card |
-| ![Accepted update](docs/screenshots/04-accepted.png) | `04-accepted.png` | Accepted update on the claim chart |
-| ![Exported Word doc](docs/screenshots/05-export.png) | `05-export.png` | Exported Word document |
-
-Until images are added, broken-image placeholders above are expected — use the live app at `/` and `/workspace` for review.
+> Screenshots will be added after deployment. Save the images under `docs/screenshots/` using the filenames above and GitHub will automatically display them once they exist.
 
 ---
 
