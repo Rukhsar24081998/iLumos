@@ -12,17 +12,17 @@ Patent analysts refine AI-generated claim charts by switching between documents,
 
 ---
 
-## Goal
+## Product Goal
 
-Enable patent analysts to refine patent claim charts faster using conversational AI while maintaining complete human control, evidence-backed decisions, and litigation-ready outputs.
+Enable patent analysts to refine patent claim charts faster using conversational AI while maintaining complete human control, evidence-backed decisions, and export-ready litigation-quality outputs.
 
 ---
 
 ## North Star Metric
 
-**Average time required to produce an export-ready claim chart.**
+**Average time to produce an export-ready claim chart while maintaining analyst-approved quality.**
 
-This measures whether iLumos helps patent analysts complete high-quality claim chart refinement more efficiently while maintaining analyst control.
+This measures whether iLumos reduces refinement time while preserving analyst trust, evidence quality, and human approval.
 
 ---
 
