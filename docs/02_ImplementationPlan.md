@@ -17,6 +17,18 @@ Each phase below is sized so it can be implemented independently in Cursor.
 
 ---
 
+## Implementation Status
+
+✅ **Phase 1 — Project Setup** (Completed)
+
+✅ **Phase 2 — Initial Onboarding Experience** (Completed)
+
+✅ **Phase 3 — Integrated AI Workspace** (Completed)
+
+The current prototype already includes a functional implementation of several capabilities originally planned across the Claim Chart Viewer, Conversational AI Chat, AI Refinement Suggestions, and Human Review phases. These capabilities currently operate using structured mock data and simulated AI responses. The remaining phases focus on replacing the mock implementation with production-ready AI services, export functionality, and final production readiness.
+
+---
+
 ## MVP Scope
 
 | In Scope | Description |
@@ -71,7 +83,7 @@ Qualitative goals:
 
 ---
 
-## Phase 1 — Project Setup
+## Phase 1 — Project Setup ✅ Completed
 
 ### Goal
 
@@ -99,7 +111,7 @@ Establish a working application shell and foundational project structure so subs
 
 ---
 
-## Phase 2 — Initial Onboarding / Setup Screen
+## Phase 2 — Initial Onboarding Experience ✅ Completed
 
 ### Goal
 
@@ -125,7 +137,7 @@ Allow the analyst to start a refinement session by uploading the claim chart and
 
 ---
 
-## Phase 3 — AI Workspace
+## Phase 3 — Integrated AI Workspace ✅ Completed
 
 ### Goal
 
@@ -147,15 +159,15 @@ Provide a single integrated workspace where the claim chart, documents context, 
 - Selected claim element state shared across viewer and chat
 - Wireframe-complete interaction model (even if AI is stubbed initially)
 
----
+**Status note:** Phase 3 is complete with a mock-driven prototype. The claim chart viewer, conversational chat, evidence-backed suggestion cards, and Accept / Reject / Refine Further review loop are implemented and demoable using structured mock data. Live model integration, edge-case depth, Word export, and final production polish remain in later phases.
 
-## Phase 4 — Claim Chart Viewer
+### Capability area — Claim Chart Viewer (delivered in Phase 3)
 
-### Goal
+#### Goal
 
 Display the claim chart in a structured, reviewable format so analysts can inspect each element’s mapping, evidence, and reasoning.
 
-### Features
+#### Features
 
 - List or table of claim elements (e.g., Claim 1(a), 1(b), …)
 - For each element show:
@@ -168,21 +180,19 @@ Display the claim chart in a structured, reviewable format so analysts can inspe
 - Indicator when an element was recently updated (accepted change)
 - Read-only evidence snippets with source document reference when available
 
-### Deliverables
+#### Deliverables
 
 - Interactive claim chart viewer component
 - Element detail view suitable for side-by-side comparison with AI suggestions
 - Data binding from the session’s claim chart model
 
----
+### Capability area — Conversational AI Chat (delivered in Phase 3 via mock responses)
 
-## Phase 5 — Conversational AI Chat
-
-### Goal
+#### Goal
 
 Enable analysts to request targeted improvements through natural language, grounded in the selected claim element and uploaded documents.
 
-### Features
+#### Features
 
 - Chat input and message history
 - Context injection: selected claim element + relevant document excerpts
@@ -191,24 +201,22 @@ Enable analysts to request targeted improvements through natural language, groun
 - Clear association between each AI reply and the claim element it targets
 - Loading and error states for AI calls
 
-### Deliverables
+#### Deliverables
 
 - Working chat panel connected to an LLM API
 - Prompt construction that includes claim element + document context
 - Chat message model persisted in session state
-- Ability to trigger a structured suggestion (Phase 6) from a chat turn
+- Ability to trigger a structured suggestion from a chat turn
 
-**MVP note:** Use a single LLM provider. Prefer structured outputs (JSON) for suggestions rather than free-form text alone.
+**MVP note:** Use a single LLM provider. Prefer structured outputs (JSON) for suggestions rather than free-form text alone. *(Live provider wiring is Phase 4; Phase 3 uses simulated responses.)*
 
----
+### Capability area — AI Refinement Suggestions (delivered in Phase 3 via mock data)
 
-## Phase 6 — AI Refinement Suggestions
-
-### Goal
+#### Goal
 
 Turn conversational requests into evidence-backed, reviewable change proposals — not silent auto-edits.
 
-### Features
+#### Features
 
 - AI returns a structured suggestion containing:
   - Target claim element ID
@@ -220,22 +228,20 @@ Turn conversational requests into evidence-backed, reviewable change proposals �
 - Before/after comparison for changed fields
 - Suggestion status lifecycle: `pending` → `accepted` | `rejected` | `superseded`
 
-### Deliverables
+#### Deliverables
 
 - Suggestion data model and UI
 - AI response parsing into structured suggestions
 - Visual before/after diff for the analyst
-- Hook into Human Review actions (Phase 7)
+- Hook into Human Review actions
 
----
+### Capability area — Human Review / Accept · Reject · Refine (delivered in Phase 3)
 
-## Phase 7 — Human Review (Accept / Reject / Refine)
-
-### Goal
+#### Goal
 
 Ensure the analyst remains the final decision-maker. No AI change is applied without explicit review.
 
-### Features
+#### Features
 
 - **Accept:** Apply proposed fields to the claim chart; mark suggestion accepted; update viewer
 - **Reject:** Discard suggestion; leave claim chart unchanged; optionally capture a short reason (optional for MVP)
@@ -244,7 +250,7 @@ Ensure the analyst remains the final decision-maker. No AI change is applied wit
 - Update pending indicators on the claim chart after each action
 - Append a lightweight activity note in chat (e.g., “Accepted evidence update for Claim 1(b)”)
 
-### Deliverables
+#### Deliverables
 
 - Accept / Reject / Refine controls on every pending suggestion
 - Claim chart mutation only on Accept
@@ -253,28 +259,60 @@ Ensure the analyst remains the final decision-maker. No AI change is applied wit
 
 ---
 
-## Phase 8 — Edge Case Handling
+## Phase 4 — Live AI Integration
+
+### Goal
+
+Replace mock AI behavior with a live model integration while preserving the existing workspace UI and human-in-the-loop interaction model.
+
+### Focus
+
+- Replace mock AI responses with Gemini
+- Structured JSON responses for suggestions
+- Prompt orchestration grounded in selected claim element and supporting documents
+- Evidence-grounded responses (cite uploaded / available sources only)
+- Loading and error handling for live AI calls
+- Maintain the existing UI and interaction model (chat, suggestion cards, Accept / Reject / Refine)
+
+### Deliverables
+
+- Live AI path wired into the existing chat and suggestion flow
+- Structured suggestion parsing aligned to the current suggestion model
+- User-visible loading and failure states without changing the Phase 3 UX shell
+- Mock fixtures retained as fallback or demo seed where useful
+
+---
+
+## Phase 5 — Edge Case Handling
 
 ### Goal
 
 Demonstrate trust and control when the AI is wrong, uncertain, or when the analyst needs to reverse a decision.
 
+### Focus
+
+- Wrong evidence (reject and refine with corrective guidance)
+- No evidence found (explicit uncertain / empty state; no fabricated citations)
+- Undo accepted refinement (in-session restore of prior claim element state)
+- Hallucination guardrails (cite only from provided documents)
+- Retry workflow after failed or unusable suggestions
+
 ### Features
 
-#### 8a — Wrong evidence
+#### Wrong evidence
 
 - Analyst can reject a suggestion because evidence is incorrect
 - Analyst can refine with guidance: “This evidence is wrong; use the section about [X] instead”
 - UI should make it obvious that rejected content was not applied
 
-#### 8b — Undo previous refinement
+#### Undo previous refinement
 
 - In-session undo for the last accepted change (minimum)
 - Restore previous element field values
 - Chat/system note that undo occurred
 - Optional: simple undo stack for multiple accepts within the session
 
-#### 8c — AI cannot find evidence
+#### AI cannot find evidence
 
 - Explicit empty/uncertain state when supporting evidence is not found in uploaded docs
 - AI communicates uncertainty clearly (no fabricated citations)
@@ -287,14 +325,22 @@ Demonstrate trust and control when the AI is wrong, uncertain, or when the analy
 - Undo control for last accepted change (or undo stack)
 - “No evidence found” suggestion/empty state with clear messaging
 - Guardrails in prompting to reduce hallucinated citations (cite only from provided documents)
+- Retry path for recoverable AI / workflow failures
 
 ---
 
-## Phase 9 — Export to Word
+## Phase 6 — Export to Word
 
 ### Goal
 
 Produce a Microsoft Word claim chart that reflects only accepted refinements.
+
+### Focus
+
+- Generate `.docx` from the current accepted claim chart state
+- Export accepted refinements only
+- Preserve a clean table-oriented layout suitable for demo
+- Download experience from workspace header/actions
 
 ### Features
 
@@ -312,11 +358,20 @@ Produce a Microsoft Word claim chart that reflects only accepted refinements.
 
 ---
 
-## Phase 10 — UI Polish
+## Phase 7 — Final UI Polish & Production Readiness
 
 ### Goal
 
-Make the prototype feel coherent and demoable: clear hierarchy, readable typography, and intentional interaction feedback — without overbuilding a design system.
+Make the prototype feel coherent, reliable, and demoable: clear hierarchy, readable typography, intentional interaction feedback, and production-ready basics — without overbuilding a design system.
+
+### Focus
+
+- Accessibility (focus states, labels, contrast, keyboard paths)
+- Performance (avoid unnecessary re-renders; keep demo interactions snappy)
+- Responsive verification (desktop-first; no clipping on common laptop sizes)
+- Error handling for user-visible failure paths
+- Code cleanup (dead code, unused imports, consistency)
+- Build verification (`npm run build`, lint, typecheck)
 
 ### Features
 
@@ -332,14 +387,24 @@ Make the prototype feel coherent and demoable: clear hierarchy, readable typogra
 - Polished workspace suitable for a live walkthrough
 - Visual states documented by usage in the UI (pending / accepted / rejected / no evidence)
 - No placeholder “Lorem” content in primary demo path
+- Clean build with no blocking lint/type errors
 
 ---
 
-## Phase 11 — Demo Readiness
+## Phase 8 — Demo Readiness
 
 ### Goal
 
 Prepare a reliable end-to-end demonstration of the refinement workflow for the Lumenci Product Manager assignment.
+
+### Focus
+
+- Seeded demo data
+- Demo checklist / scripted walkthrough
+- README updates (“How to run the demo”)
+- Screenshots for submission or walkthrough support
+- Known limitations listed briefly
+- Stable end-to-end walkthrough covering happy path + at least one edge case
 
 ### Features
 
@@ -370,19 +435,16 @@ Prepare a reliable end-to-end demonstration of the refinement workflow for the L
 
 | Order | Phase | Rationale |
 | --- | --- | --- |
-| 1 | Project setup | Foundation |
-| 2 | Onboarding/setup | Session input |
-| 3 | AI workspace shell | Integration surface |
-| 4 | Claim chart viewer | Core review UI |
-| 5 | Conversational AI chat | Analyst interaction |
-| 6 | AI refinement suggestions | Structured proposals |
-| 7 | Human review loop | Decision-making |
-| 8 | Edge cases | Trust & control |
-| 9 | Export to Word | Final output |
-| 10 | UI polish | Presentation quality |
-| 11 | Demo readiness | Assignment delivery |
+| 1 | Project Setup ✅ | Foundation |
+| 2 | Initial Onboarding Experience ✅ | Session input |
+| 3 | Integrated AI Workspace ✅ | Mock-complete review loop (chart + chat + suggestions + accept/reject/refine) |
+| 4 | Live AI Integration | Replace mock responses with Gemini + structured outputs |
+| 5 | Edge Case Handling | Trust, undo, and uncertainty |
+| 6 | Export to Word | Final output |
+| 7 | Final UI Polish & Production Readiness | Presentation quality and build health |
+| 8 | Demo Readiness | Assignment delivery |
 
-Phases 5–7 are the product core (conversational refinement with human approval). Earlier phases enable them; later phases make the story complete and credible.
+Phases 1–3 establish the product shell and mock human-in-the-loop workflow. Phase 4 is the product core for live AI. Later phases make the story complete, credible, and demo-ready.
 
 ---
 
