@@ -6,6 +6,7 @@
 export type AIErrorCode =
   | "MISSING_API_KEY"
   | "NETWORK"
+  | "TIMEOUT"
   | "EMPTY_RESPONSE"
   | "INVALID_JSON"
   | "PARSE_VALIDATION"
