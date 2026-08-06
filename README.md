@@ -30,7 +30,15 @@ cp .env.example .env.local
 
 | Variable | Purpose |
 | --- | --- |
-| `GEMINI_API_KEY` | Gemini API key (not used in Phase 1) |
+| `GEMINI_API_KEY` | Gemini API key (Phase 4.2+; server/script only) |
+| `GEMINI_MODEL` | Optional model id (default: `gemini-2.0-flash`) |
+| `AI_DEBUG` | Optional `true` to force AI debug logs |
+
+Local Gemini client smoke test (not wired to the UI):
+
+```bash
+npm run test:gemini
+```
 
 ## Project structure
 

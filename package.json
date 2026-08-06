@@ -6,12 +6,15 @@
     "dev": "next dev --turbopack",
     "build": "next build --turbopack",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:gemini": "tsx --tsconfig tsconfig.json scripts/test-gemini-suggestion.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
+    "@google/generative-ai": "^0.24.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "dotenv": "^16.6.1",
     "lucide-react": "^1.28.0",
     "next": "15.5.22",
     "react": "19.1.0",
@@ -29,6 +32,7 @@
     "eslint": "^9",
     "eslint-config-next": "15.5.22",
     "tailwindcss": "^4",
+    "tsx": "^4.23.9",
     "typescript": "^5"
   }
 }
