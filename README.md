@@ -18,15 +18,11 @@ Analysts can load a sample matter, ask an AI assistant to strengthen reasoning o
 
 ---
 
-## Live Demo
+## 🌐 Live Demo
 
-**Deployment coming soon.**
+**Try it live:** [https://i-lumos.vercel.app](https://i-lumos.vercel.app)
 
-<!-- Replace this section when deployed, for example:
-**Try it live:** [https://your-app.vercel.app](https://your-app.vercel.app)
--->
-
-Until then, run the app locally with the steps below (or use `NEXT_PUBLIC_AI_MODE=mock` for a key-free walkthrough).
+Run locally anytime with the steps below (or use `NEXT_PUBLIC_AI_MODE=mock` for a key-free walkthrough).
 
 ---
 
@@ -255,18 +251,24 @@ Follow this sequence for a hiring-manager or reviewer demo. Full checklist: [`do
 
 ---
 
-<!-- TODO: Replace this table with embedded screenshots after Vercel deployment -->
 ## 📸 Screenshots
 
-| Screenshot | Filename | Description |
-|------------|----------|-------------|
-| Setup / Quick Start | `01-setup.png` | Setup screen with Quick Start loaded |
-| AI Workspace | `02-workspace.png` | Three-panel workspace showing Claim Chart, AI Analysis, and Supporting Evidence |
-| AI Suggestion | `03-suggestion.png` | Pending AI refinement suggestion with confidence and citations |
-| Accepted Refinement | `04-accepted.png` | Accepted suggestion reflected in the claim chart |
-| Export DOCX | `05-export.png` | Exported Microsoft Word claim chart |
+### Setup / Quick Start
+![Setup](docs/screenshots/01-setup.png)
 
-> **Screenshots will be added after deployment.** Once the application is deployed on Vercel, production screenshots will be captured and saved under `docs/screenshots/` using the filenames listed above. After the screenshots are committed, this README will automatically display them on GitHub.
+### AI Workspace
+![Workspace](docs/screenshots/02-workspace.png)
+
+### AI Suggestion
+![Suggestion](docs/screenshots/03-suggestion.png)
+
+### Accepted Refinement
+![Accepted](docs/screenshots/04-accepted.png)
+
+### Export DOCX
+![Export](docs/screenshots/05-export.png)
+
+> Production screenshots will be added after capture. The README is already configured to render them automatically once committed.
 
 ---
 
